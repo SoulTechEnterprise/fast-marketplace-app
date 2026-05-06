@@ -1,0 +1,13 @@
+use async_trait::async_trait;
+
+use crate::domain::{
+    entities::{item::Item, property::Property, vehicle::Vehicle},
+    services::error::DomainError,
+};
+
+#[async_trait]
+pub trait WebscrapingMarketplaceService: Send + Sync {
+    async fn add_property(&self, entity: Property, client_id: String) -> Result<(), DomainError>;
+    async fn add_vehicle(&self, entity: Vehicle) -> Result<(), DomainError>;
+    async fn add_item(&self, entity: Item) -> Result<(), DomainError>;
+}

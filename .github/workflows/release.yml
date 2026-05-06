@@ -1,0 +1,41 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: cargo build --release
+
+      - if: matrix.os == 'windows-latest'
+        run: Rename-Item -Path target/release/app.exe -NewName app-windows.exe
+
+      - if: matrix.os == 'ubuntu-latest'
+        run: mv target/release/app target/release/app-linux
+
+      - if: matrix.os == 'macos-latest'
+        run: mv target/release/app target/release/app-macos
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/app-windows.exe
+            target/release/app-linux
+            target/release/app-macos
+          fail_on_unmatched_files: false
