@@ -34,6 +34,11 @@ const XPATH_CONDOMINIUM_INPUT: &str = "//span[contains(., 'Condomínio')]/follow
 const SEL_PHOTO_INPUT: &str = "input[type='file']";
 const SEL_FACEBOOK_LOGGED_IN: &str = "div[aria-label='Facebook']";
 
+const SEL_FACEBOOK_TRUST_DEVICE: &str = "div[data-testid='save-device-button'], \
+                                          button[name='save_device'], \
+                                          div[aria-label='Salvar dispositivo'], \
+                                          .__7n5 button"; // fallback genérico
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn model_to_label(model: &crate::domain::entities::models::property::model::Model) -> &'static str {
@@ -266,13 +271,23 @@ impl FacebookMarketplaceService {
 
         for _ in 0..240 {
             sleep(Duration::from_secs(2)).await;
-
             if let Ok(js_result) = page.evaluate("window.location.href").await {
                 if let Ok(current_url) = js_result.into_value::<String>() {
                     let is_out_of_login =
                         !current_url.contains("login") && !current_url.contains("checkpoint");
 
                     if is_out_of_login && page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok() {
+                        // Verifica se ainda está mostrando o prompt "Confiar nesse dispositivo"
+                        let trust_prompt_visible =
+                            page.find_element(SEL_FACEBOOK_TRUST_DEVICE).await.is_ok();
+
+                        if trust_prompt_visible {
+                            println!(
+                                "⏳ Aguardando decisão do prompt 'Confiar nesse dispositivo'..."
+                            );
+                            continue;
+                        }
+
                         println!("✅ Login detectado! Sessão salva em profiles/{client_id}");
                         sleep(Duration::from_secs(4)).await;
                         let _ = browser.close().await;
