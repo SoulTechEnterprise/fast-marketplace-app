@@ -273,8 +273,12 @@ impl FacebookMarketplaceService {
             sleep(Duration::from_secs(2)).await;
             if let Ok(js_result) = page.evaluate("window.location.href").await {
                 if let Ok(current_url) = js_result.into_value::<String>() {
-                    let is_out_of_login =
-                        !current_url.contains("login") && !current_url.contains("checkpoint");
+                    let is_out_of_login = !current_url.contains("login")
+                        && !current_url.contains("checkpoint")
+                        && !current_url.contains("two_factor")
+                        && !current_url.contains("two-factor")
+                        && !current_url.contains("save-device")
+                        && !current_url.contains("trust");
 
                     if is_out_of_login && page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok() {
                         // Verifica se ainda está mostrando o prompt "Confiar nesse dispositivo"
