@@ -16,21 +16,20 @@ use crate::domain::{
 
 // ── XPath estáveis (baseados no texto do label, não em ids dinâmicos) ─────────
 
-const XPATH_MODEL_DROPDOWN: &str =
-    "//label[@role='combobox'][.//span[text()='Imóvel residencial para venda ou locação']]";
-const XPATH_CATEGORY_DROPDOWN: &str = "//label[@role='combobox'][.//span[text()='Tipo de imóvel']]";
+const XPATH_MODEL_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'venda ou locação')]";
+const XPATH_CATEGORY_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de imóvel')]";
 const XPATH_PARKING_DROPDOWN: &str =
-    "//label[@role='combobox'][.//span[text()='Vagas de estacionamento']]";
-const XPATH_BEDROOM_INPUT: &str = "//span[text()='Número de quartos']/following::input[1]";
-const XPATH_BATHROOM_INPUT: &str = "//span[text()='Número de banheiros']/following::input[1]";
-const XPATH_PRICE_INPUT: &str = "//span[text()='Preço']/following::input[1]";
-const XPATH_ADDRESS_INPUT: &str = "//input[@role='combobox'][@aria-autocomplete='list']";
+    "//label[@role='combobox'][contains(., 'Vagas de estacionamento')]";
+const XPATH_BEDROOM_INPUT: &str = "//span[contains(., 'Número de quartos')]/following::input[1]";
+const XPATH_BATHROOM_INPUT: &str = "//span[contains(., 'Número de banheiros')]/following::input[1]";
+const XPATH_PRICE_INPUT: &str = "//span[contains(., 'Preço')]/following::input[1]";
+const XPATH_ADDRESS_INPUT: &str =
+    "//input[@role='combobox'][@aria-autocomplete='list'][not(contains(@aria-label, 'Pesquisar'))]";
 const XPATH_DESCRIPTION_TEXTAREA: &str =
-    "//span[text()='Descrição do imóvel']/following::textarea[1]";
-const XPATH_METER_INPUT: &str = "//span[text()='Metros quadrados']/following::input[1]";
-const XPATH_TAX_INPUT: &str =
-    "//span[text()='Imposto Predial e Territorial Urbano']/following::input[1]";
-const XPATH_CONDOMINIUM_INPUT: &str = "//span[text()='Condomínio']/following::input[1]";
+    "//span[contains(., 'Descrição do imóvel')]/following::textarea[1]";
+const XPATH_METER_INPUT: &str = "//span[contains(., 'Metros quadrados')]/following::input[1]";
+const XPATH_TAX_INPUT: &str = "//span[contains(., 'Imposto')]/following::input[1]";
+const XPATH_CONDOMINIUM_INPUT: &str = "//span[contains(., 'Condomínio')]/following::input[1]";
 
 const SEL_PHOTO_INPUT: &str = "input[type='file']";
 const SEL_FACEBOOK_LOGGED_IN: &str = "div[aria-label='Facebook']";
