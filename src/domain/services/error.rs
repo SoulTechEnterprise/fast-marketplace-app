@@ -17,6 +17,9 @@ pub enum DomainError {
     #[error("The resource already exists")]
     AlreadyExists,
 
+    #[error("The maximum allowed limit has been reached")]
+    LimitReached,
+
     #[error("Automation failed at step: {0}")]
     AutomationError(String),
 }

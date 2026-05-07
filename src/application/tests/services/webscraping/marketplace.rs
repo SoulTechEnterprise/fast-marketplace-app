@@ -36,12 +36,12 @@ impl WebscrapingMarketplaceService for InMemoryWebscrapingMarketplaceService {
         Ok(())
     }
 
-    async fn add_vehicle(&self, entity: Vehicle) -> Result<(), DomainError> {
+    async fn add_vehicle(&self, entity: Vehicle, _client_id: String) -> Result<(), DomainError> {
         self.vehicles.lock().unwrap().push(entity);
         Ok(())
     }
 
-    async fn add_item(&self, entity: Item) -> Result<(), DomainError> {
+    async fn add_item(&self, entity: Item, _client_id: String) -> Result<(), DomainError> {
         self.items.lock().unwrap().push(entity);
         Ok(())
     }

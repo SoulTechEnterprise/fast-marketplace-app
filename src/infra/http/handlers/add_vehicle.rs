@@ -6,23 +6,23 @@ use crate::{
     application::error::UseCasesError,
     domain::services::error::DomainError,
     infra::http::{
-        dtos::add_property::{AddPropertyUseCaseRequest, AddPropertyUseCaseResponse},
+        dtos::add_vehicle::{AddVehicleUseCaseRequest, AddVehicleUseCaseResponse},
         setup::AppState,
     },
 };
 
-pub async fn add_property(
+pub async fn add_vehicle(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<AddPropertyUseCaseRequest>,
-) -> Result<Json<AddPropertyUseCaseResponse>, StatusCode> {
-    let AddPropertyUseCaseRequest {
+    Json(payload): Json<AddVehicleUseCaseRequest>,
+) -> Result<Json<AddVehicleUseCaseResponse>, StatusCode> {
+    let AddVehicleUseCaseRequest {
         url,
         token,
         client_id,
     } = payload;
 
     state
-        .property_usecase
+        .vehicle_usecase
         .handle(url, token, client_id)
         .await
         .map_err(|err| match err {
@@ -30,5 +30,5 @@ pub async fn add_property(
             _ => StatusCode::BAD_REQUEST,
         })?;
 
-    Ok(Json(AddPropertyUseCaseResponse {}))
+    Ok(Json(AddVehicleUseCaseResponse {}))
 }

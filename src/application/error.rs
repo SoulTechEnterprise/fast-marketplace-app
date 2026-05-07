@@ -2,7 +2,7 @@ use crate::domain::services::error::DomainError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum UseCaseError {
+pub enum UseCasesError {
     #[error(transparent)]
     Domain(#[from] DomainError),
 

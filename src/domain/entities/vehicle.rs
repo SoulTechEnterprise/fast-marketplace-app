@@ -1,14 +1,23 @@
-use crate::domain::entities::models::vehicle::category::Category;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+use crate::domain::entities::models::vehicle::{
+    bodystyle::BodyStyle, category::Category, condition::Condition, fuel::Fuel,
+    manufacturer::Manufacturer,
+};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Vehicle {
     category: Category,
     image: Vec<String>,
     address: String,
     year: u16,
-    manufacturer: String,
+    manufacturer: Manufacturer,
     model: String,
+    mileage: u32,
+    bodystyle: BodyStyle,
     price: u32,
+    condition: Condition,
+    fuel: Fuel,
     description: String,
 }
 
@@ -18,9 +27,13 @@ impl Vehicle {
         image: Vec<String>,
         address: String,
         year: u16,
-        manufacturer: String,
+        manufacturer: Manufacturer,
         model: String,
+        mileage: u32,
+        bodystyle: BodyStyle,
         price: u32,
+        condition: Condition,
+        fuel: Fuel,
         description: String,
     ) -> Self {
         Self {
@@ -30,7 +43,11 @@ impl Vehicle {
             year,
             manufacturer,
             model,
+            mileage,
+            bodystyle,
             price,
+            condition,
+            fuel,
             description,
         }
     }
@@ -43,6 +60,10 @@ impl Vehicle {
         &self.image
     }
 
+    pub fn set_image(&mut self, image: Vec<String>) -> () {
+        self.image = image
+    }
+
     pub fn address(&self) -> &String {
         &self.address
     }
@@ -51,7 +72,7 @@ impl Vehicle {
         self.year
     }
 
-    pub fn manufacturer(&self) -> &String {
+    pub fn manufacturer(&self) -> &Manufacturer {
         &self.manufacturer
     }
 
@@ -59,8 +80,24 @@ impl Vehicle {
         &self.model
     }
 
+    pub fn mileage(&self) -> u32 {
+        self.mileage
+    }
+
+    pub fn bodystyle(&self) -> &BodyStyle {
+        &self.bodystyle
+    }
+
     pub fn price(&self) -> u32 {
         self.price
+    }
+
+    pub fn condition(&self) -> &Condition {
+        &self.condition
+    }
+
+    pub fn fuel(&self) -> &Fuel {
+        &self.fuel
     }
 
     pub fn description(&self) -> &String {
@@ -76,7 +113,11 @@ pub struct VehicleXPath {
     pub year: String,
     pub manufacturer: String,
     pub model: String,
+    pub mileage: String,
+    pub bodystyle: String,
     pub price: String,
+    pub condition: String,
+    pub fuel: String,
     pub description: String,
 }
 
@@ -88,7 +129,11 @@ impl VehicleXPath {
         year: String,
         manufacturer: String,
         model: String,
+        mileage: String,
+        bodystyle: String,
         price: String,
+        condition: String,
+        fuel: String,
         description: String,
     ) -> Self {
         Self {
@@ -98,7 +143,11 @@ impl VehicleXPath {
             year,
             manufacturer,
             model,
+            mileage,
+            bodystyle,
             price,
+            condition,
+            fuel,
             description,
         }
     }

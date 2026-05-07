@@ -5,36 +5,36 @@ use crate::{
     domain::{
         repositories::image::ImageRepository,
         services::{
-            property::PropertyService, webscraping::marketplace::WebscrapingMarketplaceService,
+            vehicle::VehicleService, webscraping::marketplace::WebscrapingMarketplaceService,
         },
     },
 };
 
-pub struct AddPropertyUseCase<
+pub struct AddVehicleUseCase<
     _ImageRepository: ImageRepository,
     _WebscrapingMarketplaceService: WebscrapingMarketplaceService,
-    _PropertyService: PropertyService,
+    _VehicleService: VehicleService,
 > {
     image_repository: Arc<_ImageRepository>,
     webscraping_marketplace_service: Arc<_WebscrapingMarketplaceService>,
-    property_service: Arc<_PropertyService>,
+    vehicle_service: Arc<_VehicleService>,
 }
 
 impl<
     _ImageRepository: ImageRepository,
     _WebscrapingMarketplaceService: WebscrapingMarketplaceService,
-    _PropertyService: PropertyService,
-> AddPropertyUseCase<_ImageRepository, _WebscrapingMarketplaceService, _PropertyService>
+    _VehicleService: VehicleService,
+> AddVehicleUseCase<_ImageRepository, _WebscrapingMarketplaceService, _VehicleService>
 {
     pub fn new(
         image_repository: Arc<_ImageRepository>,
         webscraping_marketplace_service: Arc<_WebscrapingMarketplaceService>,
-        property_service: Arc<_PropertyService>,
+        vehicle_service: Arc<_VehicleService>,
     ) -> Self {
         Self {
             image_repository,
             webscraping_marketplace_service,
-            property_service,
+            vehicle_service,
         }
     }
 
@@ -44,14 +44,14 @@ impl<
         token: String,
         client_id: String,
     ) -> Result<(), UseCasesError> {
-        let mut response = self.property_service.get(url, token).await?;
+        let mut response = self.vehicle_service.get(url, token).await?;
 
         let images = self.image_repository.add(response.image().clone()).await;
 
         response.set_image(images);
 
         self.webscraping_marketplace_service
-            .add_property(response, client_id)
+            .add_vehicle(response, client_id)
             .await?;
 
         Ok(())
@@ -63,7 +63,7 @@ mod tests {
     use crate::application::tests::{
         repositories::image::InMemoryImageRepository,
         services::{
-            property::InMemoryPropertyService,
+            vehicle::InMemoryVehicleService,
             webscraping::marketplace::InMemoryWebscrapingMarketplaceService,
         },
     };
@@ -75,12 +75,12 @@ mod tests {
         let image_repository = Arc::new(InMemoryImageRepository::new());
         let webscraping_marketplace_service =
             Arc::new(InMemoryWebscrapingMarketplaceService::new());
-        let property_service = Arc::new(InMemoryPropertyService::new());
+        let vehicle_service = Arc::new(InMemoryVehicleService::new());
 
-        let usecase = AddPropertyUseCase::new(
+        let usecase = AddVehicleUseCase::new(
             image_repository,
             webscraping_marketplace_service,
-            property_service,
+            vehicle_service,
         );
 
         let url = "https://example.com".to_string();

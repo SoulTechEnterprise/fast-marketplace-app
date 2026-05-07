@@ -1,5 +1,5 @@
 use crate::domain::entities::models::item::{
-    availability::Availability, category::Category, condition::Condition, meeting::Meeting,
+    availability::Availability, category::Category, condition::Condition,
 };
 
 #[derive(Clone, Debug)]
@@ -12,7 +12,6 @@ pub struct Item {
     description: String,
     availability: Availability,
     address: String,
-    meeting: Vec<Meeting>,
 }
 
 impl Item {
@@ -25,7 +24,6 @@ impl Item {
         description: String,
         availability: Availability,
         address: String,
-        meeting: Vec<Meeting>,
     ) -> Self {
         Self {
             image,
@@ -36,12 +34,15 @@ impl Item {
             description,
             availability,
             address,
-            meeting,
         }
     }
 
     pub fn image(&self) -> &Vec<String> {
         &self.image
+    }
+
+    pub fn set_image(&mut self, image: Vec<String>) -> () {
+        self.image = image
     }
 
     pub fn title(&self) -> &String {
@@ -71,10 +72,6 @@ impl Item {
     pub fn address(&self) -> &String {
         &self.address
     }
-
-    pub fn meeting(&self) -> &Vec<Meeting> {
-        &self.meeting
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +84,6 @@ pub struct ItemXPath {
     pub description: String,
     pub availability: String,
     pub address: String,
-    pub meeting: String,
 }
 
 impl ItemXPath {
@@ -100,7 +96,6 @@ impl ItemXPath {
         description: String,
         availability: String,
         address: String,
-        meeting: String,
     ) -> Self {
         Self {
             image,
@@ -111,7 +106,6 @@ impl ItemXPath {
             description,
             availability,
             address,
-            meeting,
         }
     }
 }

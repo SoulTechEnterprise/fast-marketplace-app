@@ -8,6 +8,6 @@ use crate::domain::{
 #[async_trait]
 pub trait WebscrapingMarketplaceService: Send + Sync {
     async fn add_property(&self, entity: Property, client_id: String) -> Result<(), DomainError>;
-    async fn add_vehicle(&self, entity: Vehicle) -> Result<(), DomainError>;
-    async fn add_item(&self, entity: Item) -> Result<(), DomainError>;
+    async fn add_vehicle(&self, entity: Vehicle, client_id: String) -> Result<(), DomainError>;
+    async fn add_item(&self, entity: Item, client_id: String) -> Result<(), DomainError>;
 }

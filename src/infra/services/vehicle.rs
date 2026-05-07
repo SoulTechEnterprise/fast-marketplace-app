@@ -3,29 +3,29 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    entities::property::Property,
-    services::{error::DomainError, property::PropertyService},
+    entities::vehicle::Vehicle,
+    services::{error::DomainError, vehicle::VehicleService},
 };
 
 // ── DTO para desembrulhar o wrapper { "property": { ... } } ──────────────────
 
 #[derive(Serialize, Deserialize)]
-struct PropertyRequest {
+struct VehicleRequest {
     url: String,
 }
 
 #[derive(Deserialize)]
-struct PropertyResponse {
-    property: Property,
+struct VehicleResponse {
+    vehicle: Vehicle,
 }
 
 // ── Implementação ─────────────────────────────────────────────────────────────
 
-pub struct PropertyServiceApi {
+pub struct VehicleServiceApi {
     client: Client,
 }
 
-impl PropertyServiceApi {
+impl VehicleServiceApi {
     pub fn new() -> Self {
         Self {
             client: Client::new(),
@@ -34,14 +34,14 @@ impl PropertyServiceApi {
 }
 
 #[async_trait]
-impl PropertyService for PropertyServiceApi {
-    async fn get(&self, url: String, token: String) -> Result<Property, DomainError> {
+impl VehicleService for VehicleServiceApi {
+    async fn get(&self, url: String, token: String) -> Result<Vehicle, DomainError> {
         let base_url = option_env!("BASE_URL_BACKEND")
             .unwrap_or("https://fast-marketplace-backend.soultech.agency");
 
-        let endpoint = format!("{}/property", base_url);
+        let endpoint = format!("{}/vehicle", base_url);
 
-        let payload = PropertyRequest { url };
+        let payload = VehicleRequest { url };
 
         let response = self
             .client
@@ -55,11 +55,11 @@ impl PropertyService for PropertyServiceApi {
         match response.status() {
             reqwest::StatusCode::OK | reqwest::StatusCode::CREATED => {
                 let wrapper = response
-                    .json::<PropertyResponse>()
+                    .json::<VehicleResponse>()
                     .await
                     .map_err(|_| DomainError::RuleViolation)?;
 
-                Ok(wrapper.property)
+                Ok(wrapper.vehicle)
             }
             reqwest::StatusCode::TOO_MANY_REQUESTS => Err(DomainError::LimitReached),
             reqwest::StatusCode::BAD_REQUEST => Err(DomainError::RuleViolation),

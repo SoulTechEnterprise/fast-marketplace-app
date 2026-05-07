@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use app::{
-    application::usecases::add_property::AddPropertyUseCase,
+    application::usecases::{add_property::AddPropertyUseCase, add_vehicle::AddVehicleUseCase},
     infra::{
         http::{routes::routes, setup::AppState},
         repositories::image::ImageRepositoryImpl,
         services::{
-            property::PropertyServiceApi, webscraping::marketplace::FacebookMarketplaceService,
+            property::PropertyServiceApi, vehicle::VehicleServiceApi,
+            webscraping::marketplace::FacebookMarketplaceService,
         },
     },
 };
@@ -18,17 +19,25 @@ use tower_http::cors::{Any, CorsLayer};
 async fn main() {
     let image_repository = Arc::new(ImageRepositoryImpl::new());
     let property_service = Arc::new(PropertyServiceApi::new());
+    let vehicle_service = Arc::new(VehicleServiceApi::new());
     let webscraping_marketplace_service = Arc::new(FacebookMarketplaceService::new());
 
     let property_usecase = Arc::new(AddPropertyUseCase::new(
-        image_repository,
+        image_repository.clone(),
         webscraping_marketplace_service.clone(),
         property_service,
+    ));
+
+    let vehicle_usecase = Arc::new(AddVehicleUseCase::new(
+        image_repository,
+        webscraping_marketplace_service.clone(),
+        vehicle_service,
     ));
 
     let state = Arc::new(AppState {
         auth_marketplace: webscraping_marketplace_service,
         property_usecase,
+        vehicle_usecase,
     });
 
     let cors = CorsLayer::new()
