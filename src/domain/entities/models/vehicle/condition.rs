@@ -9,3 +9,15 @@ pub enum Condition {
     Fair,
     Poor,
 }
+
+impl Condition {
+    pub fn transform(&self) -> &'static str {
+        match self {
+            Self::Excellent => "Excelente",
+            Self::VeryGood => "Muito bom",
+            Self::Good => "Bom",
+            Self::Fair => "Razoável",
+            Self::Poor => "Ruim",
+        }
+    }
+}

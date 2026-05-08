@@ -6,3 +6,12 @@ pub enum Category {
     Apartment,
     House,
 }
+
+impl Category {
+    pub fn transform(&self) -> &'static str {
+        match self {
+            Self::Apartment => "Apartamento",
+            Self::House => "Casa",
+        }
+    }
+}

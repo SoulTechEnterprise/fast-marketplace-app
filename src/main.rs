@@ -15,8 +15,36 @@ use axum::serve;
 use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
 
+use self_update::cargo_crate_version;
+
+fn check_for_updates() -> Result<(), Box<dyn std::error::Error>> {
+    let executable_name = if cfg!(target_os = "windows") {
+        "app-windows.exe"
+    } else if cfg!(target_os = "macos") {
+        "app-macos"
+    } else {
+        "app-linux"
+    };
+
+    self_update::backends::github::Update::configure()
+        .repo_owner("SoulTechEnterprise")
+        .repo_name("fast-marketplace-app")
+        .bin_name(executable_name)
+        .show_download_progress(true)
+        .current_version(cargo_crate_version!())
+        .build()?
+        .update()?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
+    #[cfg(not(debug_assertions))]
+    if let Err(e) = check_for_updates() {
+        eprintln!("error on update: {}", e);
+    }
+
     let image_repository = Arc::new(ImageRepositoryImpl::new());
     let property_service = Arc::new(PropertyServiceApi::new());
     let vehicle_service = Arc::new(VehicleServiceApi::new());

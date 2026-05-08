@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    entities::{item::Item, property::Property, vehicle::Vehicle},
+    entities::{property::Property, vehicle::Vehicle},
     services::error::DomainError,
 };
 
@@ -9,5 +9,4 @@ use crate::domain::{
 pub trait WebscrapingMarketplaceService: Send + Sync {
     async fn add_property(&self, entity: Property, client_id: String) -> Result<(), DomainError>;
     async fn add_vehicle(&self, entity: Vehicle, client_id: String) -> Result<(), DomainError>;
-    async fn add_item(&self, entity: Item, client_id: String) -> Result<(), DomainError>;
 }

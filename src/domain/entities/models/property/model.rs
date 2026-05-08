@@ -6,3 +6,12 @@ pub enum Model {
     Sale,
     Rent,
 }
+
+impl Model {
+    pub fn transform(&self) -> &'static str {
+        match self {
+            Self::Sale => "À venda",
+            Self::Rent => "Aluguel",
+        }
+    }
+}

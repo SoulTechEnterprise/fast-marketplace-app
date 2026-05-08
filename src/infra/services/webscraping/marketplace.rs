@@ -9,13 +9,16 @@ use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 
+use crate::domain::entities::models::property::category::Category as PropertyCategory;
+use crate::domain::entities::models::property::model::Model as PropertyModel;
+
 use crate::domain::entities::models::vehicle::bodystyle::BodyStyle as VehicleBodyStyle;
 use crate::domain::entities::models::vehicle::category::Category as VehicleCategory;
 use crate::domain::entities::models::vehicle::condition::Condition as VehicleCondition;
 use crate::domain::entities::models::vehicle::fuel::Fuel as VehicleFuel;
 use crate::domain::entities::models::vehicle::manufacturer::Manufacturer as VehicleManufacturer;
 use crate::domain::{
-    entities::{item::Item, property::Property, vehicle::Vehicle},
+    entities::{property::Property, vehicle::Vehicle},
     services::{error::DomainError, webscraping::marketplace::WebscrapingMarketplaceService},
 };
 
@@ -26,607 +29,6 @@ const SEL_FACEBOOK_TRUST_DEVICE: &str = "div[data-testid='save-device-button'], 
                                           button[name='save_device'], \
                                           div[aria-label='Salvar dispositivo'], \
                                           .__7n5 button";
-
-fn model_to_label(model: &crate::domain::entities::models::property::model::Model) -> &'static str {
-    match model {
-        crate::domain::entities::models::property::model::Model::Sale => "À venda",
-        crate::domain::entities::models::property::model::Model::Rent => "Aluguel",
-    }
-}
-
-fn category_to_label(
-    category: &crate::domain::entities::models::property::category::Category,
-) -> &'static str {
-    match category {
-        crate::domain::entities::models::property::category::Category::Apartment => "Apartamento",
-        crate::domain::entities::models::property::category::Category::House => "Casa",
-    }
-}
-
-pub fn vehicle_category_to_label(
-    category: &crate::domain::entities::models::vehicle::category::Category,
-) -> &'static str {
-    match category {
-        crate::domain::entities::models::vehicle::category::Category::CarOrPickup => "Carro/picape",
-        crate::domain::entities::models::vehicle::category::Category::Motorcycle => "Motocicleta",
-        crate::domain::entities::models::vehicle::category::Category::SportsVehicle => {
-            "Veículos para esportes"
-        }
-        crate::domain::entities::models::vehicle::category::Category::Trailer => "Trailer",
-        crate::domain::entities::models::vehicle::category::Category::UtilityTrailer => "Reboque",
-        crate::domain::entities::models::vehicle::category::Category::Boat => "Barco",
-        crate::domain::entities::models::vehicle::category::Category::CommercialOrIndustrial => {
-            "Comercial/industrial"
-        }
-        crate::domain::entities::models::vehicle::category::Category::Other => "Outro",
-    }
-}
-
-pub fn item_category_to_label(
-    category: &crate::domain::entities::models::item::category::Category,
-) -> &'static str {
-    match category {
-        crate::domain::entities::models::item::category::Category::Tools => "Ferramentas",
-        crate::domain::entities::models::item::category::Category::Furniture => "Móveis",
-        crate::domain::entities::models::item::category::Category::HouseholdItems => "Domésticos",
-        crate::domain::entities::models::item::category::Category::Garden => "Jardim",
-        crate::domain::entities::models::item::category::Category::Appliances => "Eletrodomésticos",
-        crate::domain::entities::models::item::category::Category::VideoGames => "Videogames",
-        crate::domain::entities::models::item::category::Category::BooksMoviesMusic => "Livros",
-        crate::domain::entities::models::item::category::Category::BagsAndLuggage => {
-            "Bolsas e malas"
-        }
-        crate::domain::entities::models::item::category::Category::WomensClothingAndShoes => {
-            "femininas"
-        }
-        crate::domain::entities::models::item::category::Category::MensClothingAndShoes => {
-            "masculinas"
-        }
-        crate::domain::entities::models::item::category::Category::JewelryAndAccessories => {
-            "Joias e acessórios"
-        }
-        crate::domain::entities::models::item::category::Category::HealthAndBeauty => {
-            "Saúde e beleza"
-        }
-        crate::domain::entities::models::item::category::Category::PetSupplies => "animais",
-        crate::domain::entities::models::item::category::Category::BabiesAndKids => {
-            "Bebês e crianças"
-        }
-        crate::domain::entities::models::item::category::Category::ToysAndGames => "Brinquedos",
-        crate::domain::entities::models::item::category::Category::ElectronicsAndComputers => {
-            "Eletrônicos"
-        }
-        crate::domain::entities::models::item::category::Category::CellPhones => "Celulares",
-        crate::domain::entities::models::item::category::Category::Bicycles => "Bicicletas",
-        crate::domain::entities::models::item::category::Category::ArtsAndCrafts => "Artesanato",
-        crate::domain::entities::models::item::category::Category::AutoParts => "Peças",
-        crate::domain::entities::models::item::category::Category::MusicalInstruments => {
-            "Instrumentos musicais"
-        }
-        crate::domain::entities::models::item::category::Category::AntiquesAndCollectibles => {
-            "Antiguidades"
-        }
-        crate::domain::entities::models::item::category::Category::GarageSale => "garagem",
-        crate::domain::entities::models::item::category::Category::Miscellaneous => "Diversos",
-    }
-}
-
-pub fn item_condition_to_label(
-    condition: &crate::domain::entities::models::item::condition::Condition,
-) -> &'static str {
-    match condition {
-        crate::domain::entities::models::item::condition::Condition::New => "Novo",
-        crate::domain::entities::models::item::condition::Condition::UsedLikeNew => {
-            "estado de novo"
-        }
-        crate::domain::entities::models::item::condition::Condition::UsedGood => "boas condições",
-        crate::domain::entities::models::item::condition::Condition::UsedFair => {
-            "condições razoáveis"
-        }
-    }
-}
-
-pub fn body_style_to_label(body_style: &VehicleBodyStyle) -> &'static str {
-    match body_style {
-        VehicleBodyStyle::Coupe => "Cupê",
-        VehicleBodyStyle::Pickup => "Picape",
-        VehicleBodyStyle::Sedan => "Sedã",
-        VehicleBodyStyle::Hatchback => "Hatch",
-        VehicleBodyStyle::Suv => "SUV",
-        VehicleBodyStyle::Convertible => "Conversível",
-        VehicleBodyStyle::StationWagon => "Station wagon",
-        VehicleBodyStyle::Minivan => "Minivan",
-        VehicleBodyStyle::CompactCar => "Carro compacto",
-        VehicleBodyStyle::Other => "Outro",
-    }
-}
-
-pub fn condition_to_label(condition: &VehicleCondition) -> &'static str {
-    match condition {
-        VehicleCondition::Excellent => "Excelente",
-        VehicleCondition::VeryGood => "Muito bom",
-        VehicleCondition::Good => "Bom",
-        VehicleCondition::Fair => "Razoável",
-        VehicleCondition::Poor => "Ruim",
-    }
-}
-
-pub fn fuel_type_to_label(fuel: &VehicleFuel) -> &'static str {
-    match fuel {
-        VehicleFuel::Diesel => "Diesel",
-        VehicleFuel::Electric => "Elétrico",
-        VehicleFuel::Gasoline => "Gasolina",
-        VehicleFuel::Flex => "Flex",
-        VehicleFuel::Hybrid => "Híbrido",
-        VehicleFuel::PlugInHybrid => "Híbrido plug-in",
-        VehicleFuel::Other => "Outro",
-    }
-}
-
-pub fn manufacturer_to_label(manufacturer: &VehicleManufacturer) -> &'static str {
-    match manufacturer {
-        VehicleManufacturer::AmGeneral => "AM General",
-        VehicleManufacturer::Agrale => "Agrale",
-        VehicleManufacturer::AlfaRomeo => "Alfa Romeo",
-        VehicleManufacturer::AstonMartin => "Aston Martin",
-        VehicleManufacturer::Audi => "Audi",
-        VehicleManufacturer::Bmw => "BMW",
-        VehicleManufacturer::Bentley => "Bentley",
-        VehicleManufacturer::Cadillac => "Cadillac",
-        VehicleManufacturer::Chery => "Chery",
-        VehicleManufacturer::Chevrolet => "Chevrolet",
-        VehicleManufacturer::Chrysler => "Chrysler",
-        VehicleManufacturer::Citroen => "Citroën",
-        VehicleManufacturer::CrossLander => "Cross Lander",
-        VehicleManufacturer::Ds => "DS",
-        VehicleManufacturer::Daewoo => "Daewoo",
-        VehicleManufacturer::Daihatsu => "Daihatsu",
-        VehicleManufacturer::Dodge => "Dodge",
-        VehicleManufacturer::Effa => "Effa",
-        VehicleManufacturer::Ferrari => "Ferrari",
-        VehicleManufacturer::Fiat => "FIAT",
-        VehicleManufacturer::Ford => "Ford",
-        VehicleManufacturer::Gmc => "GMC",
-        VehicleManufacturer::Geely => "Geely",
-        VehicleManufacturer::Gurgel => "Gurgel",
-        VehicleManufacturer::Hafei => "Hafei",
-        VehicleManufacturer::Haima => "Haima",
-        VehicleManufacturer::Honda => "Honda",
-        VehicleManufacturer::Hummer => "Hummer",
-        VehicleManufacturer::Hyundai => "Hyundai",
-        VehicleManufacturer::Infiniti => "Infiniti",
-        VehicleManufacturer::Iveco => "Iveco",
-        VehicleManufacturer::Jac => "JAC",
-        VehicleManufacturer::Jpx => "JPX",
-        VehicleManufacturer::Jaguar => "Jaguar",
-        VehicleManufacturer::Jeep => "Jeep",
-        VehicleManufacturer::Kia => "Kia",
-        VehicleManufacturer::Lada => "Lada",
-        VehicleManufacturer::Lamborghini => "Lamborghini",
-        VehicleManufacturer::LandRover => "Land Rover",
-        VehicleManufacturer::Lexus => "Lexus",
-        VehicleManufacturer::Lifan => "Lifan",
-        VehicleManufacturer::Lotus => "Lotus",
-        VehicleManufacturer::Mg => "MG",
-        VehicleManufacturer::Mini => "MINI",
-        VehicleManufacturer::Mahindra => "Mahindra",
-        VehicleManufacturer::Maserati => "Maserati",
-        VehicleManufacturer::Mazda => "Mazda",
-        VehicleManufacturer::McLaren => "McLaren",
-        VehicleManufacturer::MercedesBenz => "Mercedes-Benz",
-        VehicleManufacturer::Mitsubishi => "Mitsubishi",
-        VehicleManufacturer::Nissan => "Nissan",
-        VehicleManufacturer::Puma => "PUMA",
-        VehicleManufacturer::Peugeot => "Peugeot",
-        VehicleManufacturer::Porsche => "Porsche",
-        VehicleManufacturer::Renault => "Renault",
-        VehicleManufacturer::RollsRoyce => "Rolls-Royce",
-        VehicleManufacturer::Seat => "SEAT",
-        VehicleManufacturer::Santana => "Santana",
-        VehicleManufacturer::Shineray => "Shineray",
-        VehicleManufacturer::Smart => "Smart",
-        VehicleManufacturer::Ssangyong => "Ssangyong",
-        VehicleManufacturer::Subaru => "Subaru",
-        VehicleManufacturer::Suzuki => "Suzuki",
-        VehicleManufacturer::Tac => "TAC",
-        VehicleManufacturer::Toyota => "Toyota",
-        VehicleManufacturer::Troller => "Troller",
-        VehicleManufacturer::Volkswagen => "Volkswagen",
-        VehicleManufacturer::Volvo => "Volvo",
-        VehicleManufacturer::Voyage => "Voyage",
-        VehicleManufacturer::ApcMotorCompany => "A.P.C Motor Company",
-        VehicleManufacturer::Ajp => "AJP",
-        VehicleManufacturer::Ajs => "AJS",
-        VehicleManufacturer::Arc => "ARC",
-        VehicleManufacturer::Arch => "Arch",
-        VehicleManufacturer::Aspt => "ASPT",
-        VehicleManufacturer::Adly => "Adly",
-        VehicleManufacturer::Aermacchi => "Aermacchi",
-        VehicleManufacturer::Alcyon => "Alcyon",
-        VehicleManufacturer::Alta => "Alta",
-        VehicleManufacturer::Ambassador => "Ambassador",
-        VehicleManufacturer::AmericanIronhorse => "American IronHorse",
-        VehicleManufacturer::AmericanLifan => "American Lifan",
-        VehicleManufacturer::Apollo => "Apollo",
-        VehicleManufacturer::Aprilia => "Aprilia",
-        VehicleManufacturer::ArcticCat => "Arctic Cat",
-        VehicleManufacturer::Ariane => "Ariane",
-        VehicleManufacturer::Ariel => "Ariel",
-        VehicleManufacturer::ArlenNess => "Arlen Ness",
-        VehicleManufacturer::Armor => "Armor",
-        VehicleManufacturer::Armstrong => "Armstrong",
-        VehicleManufacturer::Artisan => "Artisan",
-        VehicleManufacturer::Bmc => "BMC",
-        VehicleManufacturer::Bms => "BMS",
-        VehicleManufacturer::Bsa => "BSA",
-        VehicleManufacturer::Bts => "BTS",
-        VehicleManufacturer::Bajaj => "Bajaj",
-        VehicleManufacturer::Baotian => "Baotian",
-        VehicleManufacturer::Barossa => "Barossa",
-        VehicleManufacturer::Bashan => "Bashan",
-        VehicleManufacturer::Battistinis => "Battistinis",
-        VehicleManufacturer::Beeline => "Beeline",
-        VehicleManufacturer::Benelli => "Benelli",
-        VehicleManufacturer::Beta => "Beta",
-        VehicleManufacturer::Better => "Better",
-        VehicleManufacturer::Bianchi => "Bianchi",
-        VehicleManufacturer::BigBearChoppers => "Big Bear Choppers",
-        VehicleManufacturer::BigDogMotorcycles => "Big Dog Motorcycles",
-        VehicleManufacturer::Bimota => "Bimota",
-        VehicleManufacturer::Bintelli => "Bintelli",
-        VehicleManufacturer::Blata => "Blata",
-        VehicleManufacturer::Boom => "Boom",
-        VehicleManufacturer::Borile => "Borile",
-        VehicleManufacturer::BossHoss => "Boss Hoss",
-        VehicleManufacturer::Bourget => "Bourget",
-        VehicleManufacturer::Bown => "Bown",
-        VehicleManufacturer::Boxer => "Boxer",
-        VehicleManufacturer::Brammo => "Brammo",
-        VehicleManufacturer::Branson => "Branson",
-        VehicleManufacturer::Bridgestone => "Bridgestone",
-        VehicleManufacturer::Brixton => "Brixton",
-        VehicleManufacturer::BroughSuperior => "Brough Superior",
-        VehicleManufacturer::Buell => "Buell",
-        VehicleManufacturer::Bullit => "Bullit",
-        VehicleManufacturer::Bultaco => "Bultaco",
-        VehicleManufacturer::Butler => "Butler",
-        VehicleManufacturer::Ccm => "CCM",
-        VehicleManufacturer::Cfmoto => "CFMOTO",
-        VehicleManufacturer::ChRacing => "CH Racing",
-        VehicleManufacturer::Cpi => "CPI",
-        VehicleManufacturer::Cz => "CZ",
-        VehicleManufacturer::Cagiva => "Cagiva",
-        VehicleManufacturer::CaliforniaMotorcycleCompany => "California Motorcycle Company",
-        VehicleManufacturer::CaliforniaScooterCompany => "California Scooter Company",
-        VehicleManufacturer::Campagna => "Campagna",
-        VehicleManufacturer::CanAm => "Can-Am",
-        VehicleManufacturer::Cannondale => "Cannondale",
-        VehicleManufacturer::Casal => "Casal",
-        VehicleManufacturer::Cazador => "Cazador",
-        VehicleManufacturer::Champ => "Champ",
-        VehicleManufacturer::ChangJiang => "Chang Jiang",
-        VehicleManufacturer::ChicagoScooterCo => "Chicago Scooter Co",
-        VehicleManufacturer::Chunlan => "Chunlan",
-        VehicleManufacturer::Cimatti => "Cimatti",
-        VehicleManufacturer::Citycoco => "Citycoco",
-        VehicleManufacturer::ClubCar => "Club Car",
-        VehicleManufacturer::Cobra => "Cobra",
-        VehicleManufacturer::Coleman => "Coleman",
-        VehicleManufacturer::Condor => "Condor",
-        VehicleManufacturer::Confederate => "Confederate",
-        VehicleManufacturer::ConquestTrikes => "Conquest Trikes",
-        VehicleManufacturer::Coolster => "Coolster",
-        VehicleManufacturer::Cotton => "Cotton",
-        VehicleManufacturer::Cougar => "Cougar",
-        VehicleManufacturer::CoventryEagle => "Coventry Eagle",
-        VehicleManufacturer::Cushman => "Cushman",
-        VehicleManufacturer::Dkw => "DKW",
-        VehicleManufacturer::Dot => "Dot",
-        VehicleManufacturer::Daelim => "Daelim",
-        VehicleManufacturer::Daix => "Daix",
-        VehicleManufacturer::Dayang => "Dayang",
-        VehicleManufacturer::DemonX => "Demon X",
-        VehicleManufacturer::Derbi => "Derbi",
-        VehicleManufacturer::DiBlasi => "Di Blasi",
-        VehicleManufacturer::Diamo => "Diamo",
-        VehicleManufacturer::Dichao => "Dichao",
-        VehicleManufacturer::DirectBikes => "Direct Bikes",
-        VehicleManufacturer::Dnepr => "Dnepr",
-        VehicleManufacturer::DongFang => "Dong Fang",
-        VehicleManufacturer::Douglas => "Douglas",
-        VehicleManufacturer::Dresda => "Dresda",
-        VehicleManufacturer::Ducati => "Ducati",
-        VehicleManufacturer::Eton => "E-TON",
-        VehicleManufacturer::EzGo => "E-Z-Go",
-        VehicleManufacturer::Ebr => "EBR",
-        VehicleManufacturer::EasyRider => "Easy-Rider",
-        VehicleManufacturer::Eclipse => "Eclipse",
-        VehicleManufacturer::ElectricMotion => "Electric Motion",
-        VehicleManufacturer::Electricycle => "Electricycle",
-        VehicleManufacturer::Energica => "Energica",
-        VehicleManufacturer::Eped => "Eped",
-        VehicleManufacturer::Erider => "Erider",
-        VehicleManufacturer::ErikBuellRacing => "Erik Buell Racing",
-        VehicleManufacturer::ExcelsiorHenderson => "Excelsior Henderson",
-        VehicleManufacturer::Fantic => "Fantic",
-        VehicleManufacturer::Feiying => "Feiying",
-        VehicleManufacturer::Fenian => "Fenian",
-        VehicleManufacturer::Fosti => "Fosti",
-        VehicleManufacturer::FrancisBarnett => "Francis-Barnett",
-        VehicleManufacturer::Garelli => "Garelli",
-        VehicleManufacturer::GasGas => "Gas Gas",
-        VehicleManufacturer::Genata => "Genata",
-        VehicleManufacturer::Generic => "Generic",
-        VehicleManufacturer::GenuineScooterCompany => "Genuine Scooter Company",
-        VehicleManufacturer::GhezziBrian => "Ghezzi-Brian",
-        VehicleManufacturer::Giantco => "Giantco",
-        VehicleManufacturer::Gilera => "Gilera",
-        VehicleManufacturer::Greeves => "Greeves",
-        VehicleManufacturer::Grinnall => "Grinnall",
-        VehicleManufacturer::Hanway => "Hanway",
-        VehicleManufacturer::HaoNuo => "Hao Nuo",
-        VehicleManufacturer::Haotian => "Haotian",
-        VehicleManufacturer::HarleyDavidson => "Harley-Davidson",
-        VehicleManufacturer::Harris => "Harris",
-        VehicleManufacturer::Hartford => "Hartford",
-        VehicleManufacturer::HellboundSteel => "Hellbound Steel",
-        VehicleManufacturer::Herald => "Herald",
-        VehicleManufacturer::Hesketh => "Hesketh",
-        VehicleManufacturer::Himo => "Himo",
-        VehicleManufacturer::Hisun => "Hisun",
-        VehicleManufacturer::Honchin => "Honchin",
-        VehicleManufacturer::Hongdu => "Hongdu",
-        VehicleManufacturer::Honley => "Honley",
-        VehicleManufacturer::Horex => "Horex",
-        VehicleManufacturer::Huvo => "Huvo",
-        VehicleManufacturer::Huatian => "Huatian",
-        VehicleManufacturer::Huoniao => "Huoniao",
-        VehicleManufacturer::Husaberg => "Husaberg",
-        VehicleManufacturer::Husqvarna => "Husqvarna",
-        VehicleManufacturer::Hyosung => "Hyosung",
-        VehicleManufacturer::Isomoto => "Isomoto",
-        VehicleManufacturer::Izh => "IZH",
-        VehicleManufacturer::IceBear => "Ice Bear",
-        VehicleManufacturer::Indian => "Indian",
-        VehicleManufacturer::IronEagleMotorcycle => "Iron Eagle Motorcycle",
-        VehicleManufacturer::Italika => "Italika",
-        VehicleManufacturer::Italjet => "Italjet",
-        VehicleManufacturer::Itom => "Itom",
-        VehicleManufacturer::Jbwco => "Jbwco",
-        VehicleManufacturer::Jcm => "JCM",
-        VehicleManufacturer::James => "James",
-        VehicleManufacturer::Jawa => "Jawa",
-        VehicleManufacturer::Jialing => "Jialing",
-        VehicleManufacturer::Jianshe => "Jianshe",
-        VehicleManufacturer::Jincheng => "Jincheng",
-        VehicleManufacturer::Jinfeng => "Jinfeng",
-        VehicleManufacturer::Jinlun => "Jinlun",
-        VehicleManufacturer::JohnDeere => "John Deere",
-        VehicleManufacturer::JohnnyPag => "Johnny Pag",
-        VehicleManufacturer::Jonway => "Jonway",
-        VehicleManufacturer::Jotagas => "Jotagas",
-        VehicleManufacturer::JuicyBike => "Juicy Bike",
-        VehicleManufacturer::Kalex => "Kalex",
-        VehicleManufacturer::Ktm => "KTM",
-        VehicleManufacturer::Kangchao => "Kangchao",
-        VehicleManufacturer::Kawasaki => "Kawasaki",
-        VehicleManufacturer::Kayo => "Kayo",
-        VehicleManufacturer::Keeway => "Keeway",
-        VehicleManufacturer::KinroadRock => "Kinroad-Rock",
-        VehicleManufacturer::Kymco => "Kymco",
-        VehicleManufacturer::Lem => "Lem",
-        VehicleManufacturer::Lambretta => "Lambretta",
-        VehicleManufacturer::Lance => "Lance",
-        VehicleManufacturer::Lanying => "Lanying",
-        VehicleManufacturer::Laverda => "Laverda",
-        VehicleManufacturer::Lehman => "Lehman",
-        VehicleManufacturer::LehmanTrikes => "Lehman Trikes",
-        VehicleManufacturer::Leike => "Leike",
-        VehicleManufacturer::Levis => "Levis",
-        VehicleManufacturer::Lexmoto => "Lexmoto",
-        VehicleManufacturer::Lifan => "Lifan",
-        VehicleManufacturer::Linhai => "Linhai",
-        VehicleManufacturer::Lintex => "Lintex",
-        VehicleManufacturer::Lml => "LML",
-        VehicleManufacturer::Loncin => "Loncin",
-        VehicleManufacturer::Longjia => "Longjia",
-        VehicleManufacturer::Lyric => "Lyric",
-        VehicleManufacturer::Mbk => "MBK",
-        VehicleManufacturer::MvAgusta => "MV Agusta",
-        VehicleManufacturer::Mz => "MZ",
-        VehicleManufacturer::Magni => "Magni",
-        VehicleManufacturer::Maico => "Maico",
-        VehicleManufacturer::Malaguti => "Malaguti",
-        VehicleManufacturer::Martin => "Martin",
-        VehicleManufacturer::Masai => "Masai",
-        VehicleManufacturer::Mash => "Mash",
-        VehicleManufacturer::Matchless => "Matchless",
-        VehicleManufacturer::Mavizen => "Mavizen",
-        VehicleManufacturer::Maxus => "Maxus",
-        VehicleManufacturer::Megelli => "Megelli",
-        VehicleManufacturer::Mig => "Mig",
-        VehicleManufacturer::Mikilon => "Mikilon",
-        VehicleManufacturer::MiniMoto => "Mini Moto",
-        VehicleManufacturer::Mobylette => "Mobylette",
-        VehicleManufacturer::Modenas => "Modenas",
-        VehicleManufacturer::Mondial => "Mondial",
-        VehicleManufacturer::Montesa => "Montesa",
-        VehicleManufacturer::Morini => "Morini",
-        VehicleManufacturer::MotoGuzzi => "Moto Guzzi",
-        VehicleManufacturer::MotoMartin => "Moto-Martin",
-        VehicleManufacturer::MotoMorini => "Moto Morini",
-        VehicleManufacturer::MotoParilla => "Moto-Parilla",
-        VehicleManufacturer::Motobi => "Motobi",
-        VehicleManufacturer::Motobecane => "Motobecane",
-        VehicleManufacturer::MotorTrike => "Motor Trike",
-        VehicleManufacturer::MotoHispania => "Moto-Hispania",
-        VehicleManufacturer::Motorini => "Motorini",
-        VehicleManufacturer::Motus => "Motus",
-        VehicleManufacturer::Mutt => "Mutt",
-        VehicleManufacturer::Metisse => "Metisse",
-        VehicleManufacturer::Munch => "Munch",
-        VehicleManufacturer::Nsu => "NSU",
-        VehicleManufacturer::Nvt => "NVT",
-        VehicleManufacturer::Neco => "Neco",
-        VehicleManufacturer::NewHudson => "New Hudson",
-        VehicleManufacturer::NewImperial => "New Imperial",
-        VehicleManufacturer::NewMap => "New Map",
-        VehicleManufacturer::Nippi => "Nippi",
-        VehicleManufacturer::Nipponia => "Nipponia",
-        VehicleManufacturer::Niu => "NIU",
-        VehicleManufacturer::Norton => "Norton",
-        VehicleManufacturer::Oset => "Oset",
-        VehicleManufacturer::Omega => "Omega",
-        VehicleManufacturer::Ossa => "Ossa",
-        VehicleManufacturer::Pgo => "PGO",
-        VehicleManufacturer::Por => "Por",
-        VehicleManufacturer::Pannonia => "Pannonia",
-        VehicleManufacturer::Panther => "Panther",
-        VehicleManufacturer::ParamountCustomCycles => "Paramount Custom Cycles",
-        VehicleManufacturer::Paton => "Paton",
-        VehicleManufacturer::PeaceSports => "Peace Sports",
-        VehicleManufacturer::Peirspeed => "Peirspeed",
-        VehicleManufacturer::Pembleton => "Pembleton",
-        VehicleManufacturer::Peripoli => "Peripoli",
-        VehicleManufacturer::Petronas => "Petronas",
-        VehicleManufacturer::Piaggio => "Piaggio",
-        VehicleManufacturer::Pioneer => "Pioneer",
-        VehicleManufacturer::PitsterPro => "Pitster Pro",
-        VehicleManufacturer::Polaris => "Polaris",
-        VehicleManufacturer::Polestar => "Polestar",
-        VehicleManufacturer::Polini => "Polini",
-        VehicleManufacturer::PrecisionCycleWorks => "Precision Cycle Works",
-        VehicleManufacturer::Puch => "Puch",
-        VehicleManufacturer::Pulse => "Pulse",
-        VehicleManufacturer::Qingqi => "Qingqi",
-        VehicleManufacturer::Quadro => "Quadro",
-        VehicleManufacturer::Quantya => "Quantya",
-        VehicleManufacturer::Raleigh => "Raleigh",
-        VehicleManufacturer::RedHorse => "Red Horse",
-        VehicleManufacturer::Regent => "Regent",
-        VehicleManufacturer::Revtech => "Revtech",
-        VehicleManufacturer::Rewaco => "Rewaco",
-        VehicleManufacturer::Rhino => "Rhino",
-        VehicleManufacturer::Rickman => "Rickman",
-        VehicleManufacturer::Ridley => "Ridley",
-        VehicleManufacturer::Rieju => "Rieju",
-        VehicleManufacturer::Roadsmith => "Roadsmith",
-        VehicleManufacturer::Roehr => "Roehr",
-        VehicleManufacturer::Rokon => "Rokon",
-        VehicleManufacturer::MotoRoma => "Moto-Roma",
-        VehicleManufacturer::Romarsh => "Romarsh",
-        VehicleManufacturer::Romeo => "Romeo",
-        VehicleManufacturer::Rovigo => "Rovigo",
-        VehicleManufacturer::Roxon => "Roxon",
-        VehicleManufacturer::RoyalAlloy => "Royal Alloy",
-        VehicleManufacturer::RoyalEnfield => "Royal Enfield",
-        VehicleManufacturer::Rudge => "Rudge",
-        VehicleManufacturer::Rumi => "Rumi",
-        VehicleManufacturer::Sfm => "SFM",
-        VehicleManufacturer::SsrMotorsports => "SSR Motorsports",
-        VehicleManufacturer::Stacyc => "Stacyc",
-        VehicleManufacturer::Swm => "SWM",
-        VehicleManufacturer::Sym => "SYM",
-        VehicleManufacturer::Sachs => "Sachs",
-        VehicleManufacturer::Sanglas => "Sanglas",
-        VehicleManufacturer::Sanya => "Sanya",
-        VehicleManufacturer::Saxon => "Saxon",
-        VehicleManufacturer::Schwinn => "Schwinn",
-        VehicleManufacturer::Scomadi => "Scomadi",
-        VehicleManufacturer::Scorpa => "Scorpa",
-        VehicleManufacturer::Scott => "Scott",
-        VehicleManufacturer::Secma => "Secma",
-        VehicleManufacturer::Seeley => "Seeley",
-        VehicleManufacturer::Segway => "Segway",
-        VehicleManufacturer::Senke => "Senke",
-        VehicleManufacturer::Sherco => "Sherco",
-        VehicleManufacturer::Siamoto => "Siamoto",
-        VehicleManufacturer::Silk => "Silk",
-        VehicleManufacturer::Simson => "Simson",
-        VehicleManufacturer::Sinnis => "Sinnis",
-        VehicleManufacturer::Skygo => "Skygo",
-        VehicleManufacturer::Skyjet => "Skyjet",
-        VehicleManufacturer::Skyteam => "Skyteam",
-        VehicleManufacturer::Slam => "Slam",
-        VehicleManufacturer::Slingshot => "Slingshot",
-        VehicleManufacturer::Smc => "Smc",
-        VehicleManufacturer::Spirit => "Spirit",
-        VehicleManufacturer::Spondon => "Spondon",
-        VehicleManufacturer::StarMotorcycles => "Star Motorcycles",
-        VehicleManufacturer::Starway => "Starway",
-        VehicleManufacturer::Stomp => "Stomp",
-        VehicleManufacturer::SuckerPunchSallys => "Sucker Punch Sallys",
-        VehicleManufacturer::Sukida => "Sukida",
-        VehicleManufacturer::Sumo => "Sumo",
-        VehicleManufacturer::Sunbeam => "Sunbeam",
-        VehicleManufacturer::SuperSoco => "Super Soco",
-        VehicleManufacturer::Superbyke => "Superbyke",
-        VehicleManufacturer::Swift => "Swift",
-        VehicleManufacturer::Tgb => "TGB",
-        VehicleManufacturer::TaizhouZhongneng => "Taizhou Zhongneng",
-        VehicleManufacturer::Tamoretti => "Tamoretti",
-        VehicleManufacturer::TaoMotor => "Tao Motor",
-        VehicleManufacturer::TaoTao => "Tao Tao",
-        VehicleManufacturer::Terrot => "Terrot",
-        VehicleManufacturer::ThoroughbredMotorsports => "Thoroughbred Motorsports",
-        VehicleManufacturer::Thumpstar => "Thumpstar",
-        VehicleManufacturer::ThunderMountain => "Thunder Mountain",
-        VehicleManufacturer::Titan => "Titan",
-        VehicleManufacturer::Tmec => "Tmec",
-        VehicleManufacturer::Tomos => "Tomos",
-        VehicleManufacturer::Tor => "TOR",
-        VehicleManufacturer::Track => "Track",
-        VehicleManufacturer::Trailmaster => "Trailmaster",
-        VehicleManufacturer::Triton => "Triton",
-        VehicleManufacturer::Triumph => "Triumph",
-        VehicleManufacturer::Ubco => "UBCO",
-        VehicleManufacturer::Um => "UM",
-        VehicleManufacturer::Ural => "Ural",
-        VehicleManufacturer::Urban => "Urban",
-        VehicleManufacturer::Vor => "Vor",
-        VehicleManufacturer::Vanderhall => "Vanderhall",
-        VehicleManufacturer::Vectrix => "Vectrix",
-        VehicleManufacturer::Velocette => "Velocette",
-        VehicleManufacturer::Vento => "Vento",
-        VehicleManufacturer::Venture => "Venture",
-        VehicleManufacturer::Vertemati => "Vertemati",
-        VehicleManufacturer::Vertigo => "Vertigo",
-        VehicleManufacturer::Vespa => "Vespa",
-        VehicleManufacturer::Victoria => "Victoria",
-        VehicleManufacturer::Victory => "Victory",
-        VehicleManufacturer::Vincent => "Vincent",
-        VehicleManufacturer::Vitacci => "Vitacci",
-        VehicleManufacturer::Voxan => "Voxan",
-        VehicleManufacturer::Vulcan => "Vulcan",
-        VehicleManufacturer::Vyrus => "Vyrus",
-        VehicleManufacturer::Velosolex => "Velosolex",
-        VehicleManufacturer::WkBikes => "WK Bikes",
-        VehicleManufacturer::Wangye => "Wangye",
-        VehicleManufacturer::WildWest => "Wild West",
-        VehicleManufacturer::WolfBrandScooters => "Wolf Brand Scooters",
-        VehicleManufacturer::Wuyang => "Wuyang",
-        VehicleManufacturer::Xgjao => "Xgjao",
-        VehicleManufacturer::Xispa => "Xispa",
-        VehicleManufacturer::XtremeMotorCo => "Xtreme Motor Co.",
-        VehicleManufacturer::Ycf => "YCF",
-        VehicleManufacturer::Yamaha => "Yamaha",
-        VehicleManufacturer::Yamasaki => "Yamasaki",
-        VehicleManufacturer::Yamoto => "Yamoto",
-        VehicleManufacturer::Yiben => "Yiben",
-        VehicleManufacturer::Yuan => "Yuan",
-        VehicleManufacturer::Zenardi => "Zenardi",
-        VehicleManufacturer::Zennco => "Zennco",
-        VehicleManufacturer::Zero => "Zero",
-        VehicleManufacturer::ZeroEngineering => "Zero Engineering",
-        VehicleManufacturer::Zhejiang => "Zhejiang",
-        VehicleManufacturer::Znen => "Znen",
-        VehicleManufacturer::Zodiac => "Zodiac",
-        VehicleManufacturer::Zongshen => "Zongshen",
-        VehicleManufacturer::Zontes => "Zontes",
-        VehicleManufacturer::Tm => "TM",
-        VehicleManufacturer::Other => "Outro",
-    }
-}
 
 fn profile_dir(client_id: &str) -> PathBuf {
     #[cfg(target_os = "windows")]
@@ -934,11 +336,14 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
         sleep(Duration::from_secs(2)).await;
 
-        page.select_dropdown(XPATH_MODEL_DROPDOWN, model_to_label(entity.model()))
-            .await?;
+        page.select_dropdown(
+            XPATH_MODEL_DROPDOWN,
+            PropertyModel::transform(entity.model()),
+        )
+        .await?;
         page.select_dropdown(
             XPATH_CATEGORY_DROPDOWN,
-            category_to_label(entity.category()),
+            PropertyCategory::transform(entity.category()),
         )
         .await?;
 
@@ -1063,7 +468,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
         page.select_dropdown(
             XPATH_TYPE_DROPDOWN,
-            vehicle_category_to_label(entity.category()),
+            VehicleCategory::transform(entity.category()),
         )
         .await?;
 
@@ -1078,14 +483,14 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             | VehicleCategory::CommercialOrIndustrial => {
                 page.select_dropdown(
                     XPATH_MAKE_DROPDOWN,
-                    manufacturer_to_label(entity.manufacturer()),
+                    VehicleManufacturer::transform(entity.manufacturer()),
                 )
                 .await?;
             }
             _ => {
                 page.focus_and_type(
                     XPATH_MAKE_INPUT,
-                    manufacturer_to_label(entity.manufacturer()),
+                    VehicleManufacturer::transform(entity.manufacturer()),
                 )
                 .await?;
             }
@@ -1104,7 +509,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             let _ = page
                 .select_dropdown(
                     XPATH_BODYSTYLE_DROPDOWN,
-                    body_style_to_label(entity.bodystyle()),
+                    VehicleBodyStyle::transform(entity.bodystyle()),
                 )
                 .await;
         }
@@ -1113,14 +518,14 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             let _ = page
                 .select_dropdown(
                     XPATH_CONDITION_DROPDOWN,
-                    condition_to_label(entity.condition()),
+                    VehicleCondition::transform(entity.condition()),
                 )
                 .await;
         }
 
         if page.find_xpath(XPATH_FUEL_DROPDOWN).await.is_ok() {
             let _ = page
-                .select_dropdown(XPATH_FUEL_DROPDOWN, fuel_type_to_label(entity.fuel()))
+                .select_dropdown(XPATH_FUEL_DROPDOWN, VehicleFuel::transform(entity.fuel()))
                 .await;
         }
 
@@ -1159,9 +564,5 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         let _ = self.close().await;
 
         Ok(())
-    }
-
-    async fn add_item(&self, _entity: Item, _client_id: String) -> Result<(), DomainError> {
-        todo!()
     }
 }

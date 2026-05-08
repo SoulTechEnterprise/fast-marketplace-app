@@ -12,3 +12,17 @@ pub enum Fuel {
     PlugInHybrid,
     Other,
 }
+
+impl Fuel {
+    pub fn transform(&self) -> &'static str {
+        match self {
+            Self::Diesel => "Diesel",
+            Self::Electric => "Elétrico",
+            Self::Gasoline => "Gasolina",
+            Self::Flex => "Flex",
+            Self::Hybrid => "Híbrido",
+            Self::PlugInHybrid => "Híbrido plug-in",
+            Self::Other => "Outro",
+        }
+    }
+}
