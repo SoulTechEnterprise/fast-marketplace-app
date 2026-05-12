@@ -19,60 +19,8 @@ use axum::serve;
 use tokio::net::TcpListener;
 use tower_http::cors::{Any, CorsLayer};
 
-use self_update::cargo_crate_version;
-
-fn check_for_updates() -> Result<(), Box<dyn std::error::Error>> {
-    let executable_name = if cfg!(target_os = "windows") {
-        "app-windows.exe"
-    } else if cfg!(target_os = "macos") {
-        "app-macos"
-    } else {
-        "app-linux"
-    };
-
-    let releases = self_update::backends::github::ReleaseList::configure()
-        .repo_owner("SoulTechEnterprise")
-        .repo_name("fast-marketplace-app")
-        .build()?
-        .fetch()?;
-
-    if releases.is_empty() {
-        return Ok(());
-    }
-
-    let latest_release = &releases[0];
-
-    let is_greater =
-        self_update::version::bump_is_greater(cargo_crate_version!(), &latest_release.version)?;
-
-    if !is_greater {
-        return Ok(());
-    }
-
-    let asset = latest_release
-        .asset_for(executable_name, None)
-        .ok_or("Asset nao encontrado")?;
-
-    let tmp_dir = tempfile::Builder::new().prefix("update").tempdir()?;
-    let tmp_file_path = tmp_dir.path().join(executable_name);
-    let mut tmp_file = std::fs::File::create(&tmp_file_path)?;
-
-    self_update::Download::from_url(&asset.download_url)
-        .show_progress(true)
-        .download_to(&mut tmp_file)?;
-
-    self_replace::self_replace(&tmp_file_path)?;
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() {
-    #[cfg(not(debug_assertions))]
-    if let Err(e) = check_for_updates() {
-        eprintln!("error on update: {}", e);
-    }
-
     let image_repository = Arc::new(ImageRepositoryImpl::new());
     let property_service = Arc::new(PropertyServiceApi::new());
     let vehicle_service = Arc::new(VehicleServiceApi::new());
