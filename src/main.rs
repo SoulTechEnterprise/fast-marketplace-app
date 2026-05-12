@@ -30,15 +30,38 @@ fn check_for_updates() -> Result<(), Box<dyn std::error::Error>> {
         "app-linux"
     };
 
-    self_update::backends::github::Update::configure()
+    let releases = self_update::backends::github::ReleaseList::configure()
         .repo_owner("SoulTechEnterprise")
         .repo_name("fast-marketplace-app")
-        .bin_name(executable_name)
-        .target("")
-        .show_download_progress(true)
-        .current_version(cargo_crate_version!())
         .build()?
-        .update()?;
+        .fetch()?;
+
+    if releases.is_empty() {
+        return Ok(());
+    }
+
+    let latest_release = &releases[0];
+
+    let is_greater =
+        self_update::version::bump_is_greater(cargo_crate_version!(), &latest_release.version)?;
+
+    if !is_greater {
+        return Ok(());
+    }
+
+    let asset = latest_release
+        .asset_for(executable_name, None)
+        .ok_or("Asset nao encontrado")?;
+
+    let tmp_dir = tempfile::Builder::new().prefix("update").tempdir()?;
+    let tmp_file_path = tmp_dir.path().join(executable_name);
+    let mut tmp_file = std::fs::File::create(&tmp_file_path)?;
+
+    self_update::Download::from_url(&asset.download_url)
+        .show_progress(true)
+        .download_to(&mut tmp_file)?;
+
+    self_replace::self_replace(&tmp_file_path)?;
 
     Ok(())
 }
