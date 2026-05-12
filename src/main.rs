@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use app::{
-    application::usecases::{add_property::AddPropertyUseCase, add_vehicle::AddVehicleUseCase},
+    application::usecases::{
+        add_property::AddPropertyUseCase, add_vehicle::AddVehicleUseCase,
+        get_marketplace::GetMarketplaceUseCase, signin_marketplace::SignInMarketplaceUseCase,
+        signout_marketplace::SignOutMarketplaceUseCase,
+    },
     infra::{
         http::{routes::routes, setup::AppState},
         repositories::image::ImageRepositoryImpl,
@@ -30,6 +34,7 @@ fn check_for_updates() -> Result<(), Box<dyn std::error::Error>> {
         .repo_owner("SoulTechEnterprise")
         .repo_name("fast-marketplace-app")
         .bin_name(executable_name)
+        .target("")
         .show_download_progress(true)
         .current_version(cargo_crate_version!())
         .build()?
@@ -62,10 +67,23 @@ async fn main() {
         vehicle_service,
     ));
 
+    let signin_marketplace_usecase = Arc::new(SignInMarketplaceUseCase::new(
+        webscraping_marketplace_service.clone(),
+    ));
+
+    let signout_marketplace_usecase = Arc::new(SignOutMarketplaceUseCase::new(
+        webscraping_marketplace_service.clone(),
+    ));
+
+    let get_marketplace_usecase =
+        Arc::new(GetMarketplaceUseCase::new(webscraping_marketplace_service));
+
     let state = Arc::new(AppState {
-        auth_marketplace: webscraping_marketplace_service,
         property_usecase,
         vehicle_usecase,
+        signin_marketplace_usecase,
+        signout_marketplace_usecase,
+        get_marketplace_usecase,
     });
 
     let cors = CorsLayer::new()

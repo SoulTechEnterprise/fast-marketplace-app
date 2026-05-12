@@ -37,7 +37,7 @@ fn profile_dir(client_id: &str) -> PathBuf {
     let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
 
     let dir = base
-        .join("fast-marketplace")
+        .join("marketplace")
         .join("chrome-profiles")
         .join(client_id);
     std::fs::create_dir_all(&dir).ok();
@@ -193,6 +193,27 @@ impl FacebookMarketplaceService {
         Ok(browser)
     }
 
+    async fn launch_browser_headless(client_id: &str) -> Result<Browser, DomainError> {
+        let (browser, mut handler) = Browser::launch(
+            BrowserConfig::builder()
+                .user_data_dir(profile_dir(client_id))
+                .build()
+                .map_err(|_| DomainError::NotFound)?,
+        )
+        .await
+        .map_err(|_| DomainError::NotFound)?;
+
+        tokio::task::spawn(async move {
+            while let Some(h) = handler.next().await {
+                if h.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok(browser)
+    }
+
     pub async fn open(&self, url: &str, client_id: String) -> Result<(), DomainError> {
         let browser = Self::launch_browser(client_id.as_str()).await?;
         let page = browser
@@ -211,43 +232,6 @@ impl FacebookMarketplaceService {
             let _ = browser.close().await;
         }
         *self.page.lock().await = None;
-    }
-
-    pub async fn login(&self, client_id: String) -> Result<(), DomainError> {
-        let mut browser = Self::launch_browser(client_id.as_str()).await?;
-        let page = browser
-            .new_page("https://www.facebook.com/login")
-            .await
-            .map_err(|_| DomainError::NotFound)?;
-
-        for _ in 0..240 {
-            sleep(Duration::from_secs(2)).await;
-            if let Ok(js_result) = page.evaluate("window.location.href").await {
-                if let Ok(current_url) = js_result.into_value::<String>() {
-                    let is_out_of_login = !current_url.contains("login")
-                        && !current_url.contains("two_factor")
-                        && !current_url.contains("two-factor")
-                        && !current_url.contains("save-device")
-                        && !current_url.contains("trust");
-
-                    if is_out_of_login && page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok() {
-                        let trust_prompt_visible =
-                            page.find_element(SEL_FACEBOOK_TRUST_DEVICE).await.is_ok();
-
-                        if trust_prompt_visible {
-                            continue;
-                        }
-
-                        sleep(Duration::from_secs(4)).await;
-                        let _ = browser.close().await;
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
-        let _ = browser.close().await;
-        Err(DomainError::NotFound)
     }
 
     async fn get_page<'a>(
@@ -564,5 +548,138 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         let _ = self.close().await;
 
         Ok(())
+    }
+
+    async fn signin(&self, client_id: String) -> Result<(), DomainError> {
+        let mut browser = Self::launch_browser(client_id.as_str()).await?;
+        let page = browser
+            .new_page("https://www.facebook.com/login")
+            .await
+            .map_err(|_| DomainError::NotFound)?;
+
+        for _ in 0..240 {
+            sleep(Duration::from_secs(2)).await;
+            if let Ok(js_result) = page.evaluate("window.location.href").await {
+                if let Ok(current_url) = js_result.into_value::<String>() {
+                    let is_out_of_login = !current_url.contains("login")
+                        && !current_url.contains("two_factor")
+                        && !current_url.contains("two-factor")
+                        && !current_url.contains("save-device")
+                        && !current_url.contains("trust");
+
+                    if is_out_of_login && page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok() {
+                        let trust_prompt_visible =
+                            page.find_element(SEL_FACEBOOK_TRUST_DEVICE).await.is_ok();
+
+                        if trust_prompt_visible {
+                            continue;
+                        }
+
+                        sleep(Duration::from_secs(8)).await;
+                        let _ = browser.close().await;
+                        sleep(Duration::from_secs(2)).await;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        let _ = browser.close().await;
+        Err(DomainError::NotFound)
+    }
+
+    async fn signout(&self, client_id: String) -> Result<(), DomainError> {
+        let mut browser = Self::launch_browser_headless(client_id.as_str()).await?;
+        let page = browser
+            .new_page("https://www.facebook.com")
+            .await
+            .map_err(|_| DomainError::NotFound)?;
+
+        sleep(Duration::from_secs(6)).await;
+
+        if page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_err() {
+            let _ = browser.close().await;
+            return Err(DomainError::NotFound);
+        }
+
+        // Extrai o token h do form de logout e submete
+        let _ = page
+            .evaluate(
+                r#"
+                (function() {
+                    const form = document.querySelector('form[action*="logout.php"]');
+                    if (!form) return { success: false, reason: 'form not found' };
+
+                    const h = form.querySelector('input[name="h"]');
+                    const ref_ = form.querySelector('input[name="ref"]');
+                    if (!h) return { success: false, reason: 'token h not found' };
+
+                    const params = new URLSearchParams();
+                    params.append('h', h.value);
+                    params.append('ref', ref_ ? ref_.value : 'mb');
+
+                    fetch('/logout.php?button_location=settings&button_name=logout', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: params.toString()
+                    });
+
+                    return { success: true, h: h.value };
+                })()
+            "#,
+            )
+            .await
+            .map_err(|e| {
+                DomainError::AutomationError(format!("Falha ao executar logout: {}", e))
+            })?;
+
+        for _ in 0..20 {
+            sleep(Duration::from_secs(2)).await;
+            if let Ok(js_result) = page.evaluate("window.location.href").await {
+                if let Ok(current_url) = js_result.into_value::<String>() {
+                    if current_url.contains("login")
+                        || current_url.contains("logged_out")
+                        || current_url.contains("checkpoint")
+                        || current_url.contains("accounts/login")
+                    {
+                        sleep(Duration::from_secs(3)).await;
+                        let _ = browser.close().await;
+                        return Ok(());
+                    }
+
+                    // Tela de seleção de conta — força navegação para login limpo
+                    if current_url.contains("facebook.com") && !current_url.contains("login") {
+                        page.goto("https://www.facebook.com/login?next&prompt=select_account&login_attempt=1&lwv=100")
+                            .await
+                            .ok();
+                        sleep(Duration::from_secs(2)).await;
+                        let _ = browser.close().await;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        let _ = browser.close().await;
+        Err(DomainError::AutomationError(
+            "Timeout: logout não foi confirmado".to_string(),
+        ))
+    }
+
+    async fn get_account(&self, client_id: String) -> Result<bool, DomainError> {
+        let mut browser = Self::launch_browser_headless(client_id.as_str()).await?;
+
+        let page = browser
+            .new_page("https://www.facebook.com")
+            .await
+            .map_err(|_| DomainError::NotFound)?;
+
+        sleep(Duration::from_secs(6)).await;
+
+        let is_logged_in = page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok();
+
+        let _ = browser.close().await;
+        Ok(is_logged_in)
     }
 }

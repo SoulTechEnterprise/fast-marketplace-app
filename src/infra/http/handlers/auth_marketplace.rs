@@ -1,4 +1,4 @@
-use crate::infra::http::{dtos::auth_marketplace::AuthMarketplaceUseCaseRequest, setup::AppState};
+use crate::infra::http::{dtos::marketplace::AuthMarketplaceUseCaseRequest, setup::AppState};
 use axum::{Json, extract::State, http::StatusCode};
 use std::sync::Arc;
 
