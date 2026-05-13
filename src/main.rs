@@ -64,10 +64,8 @@ async fn main() {
 
     let app_router = routes(state).layer(cors);
 
-    let port = "3001";
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))
-        .await
-        .unwrap();
+    let port = "15137";
+    let listener = TcpListener::bind(format!("[::]:{}", port)).await.unwrap();
 
     println!("🚀 server running on port - {}!", port);
 
