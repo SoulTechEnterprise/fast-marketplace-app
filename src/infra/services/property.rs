@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use std::env;
+
 use crate::domain::{
     entities::property::Property,
     services::{error::DomainError, property::PropertyService},
@@ -23,12 +25,21 @@ struct PropertyResponse {
 
 pub struct PropertyServiceApi {
     client: Client,
+    base_url: String,
 }
 
 impl PropertyServiceApi {
     pub fn new() -> Self {
+        let args: Vec<String> = env::args().collect();
+        let base_url = if args.len() > 1 {
+            args[1].clone()
+        } else {
+            "https://fast-marketplace-backend.soultech.agency".to_string()
+        };
+
         Self {
             client: Client::new(),
+            base_url,
         }
     }
 }
@@ -36,10 +47,7 @@ impl PropertyServiceApi {
 #[async_trait]
 impl PropertyService for PropertyServiceApi {
     async fn get(&self, url: String, token: String) -> Result<Property, DomainError> {
-        let base_url = option_env!("BASE_URL_BACKEND")
-            .unwrap_or("https://fast-marketplace-backend.soultech.agency");
-
-        let endpoint = format!("{}/property", base_url);
+        let endpoint = format!("{}/property", self.base_url);
 
         let payload = PropertyRequest { url };
 

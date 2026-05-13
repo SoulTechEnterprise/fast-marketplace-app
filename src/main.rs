@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use app::{
@@ -16,8 +17,12 @@ use app::{
     },
 };
 use axum::serve;
-use tokio::net::TcpListener;
+use tokio::net::TcpSocket;
 use tower_http::cors::{Any, CorsLayer};
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c().await.unwrap();
+}
 
 #[tokio::main]
 async fn main() {
@@ -65,9 +70,18 @@ async fn main() {
     let app_router = routes(state).layer(cors);
 
     let port = "15137";
-    let listener = TcpListener::bind(format!("[::]:{}", port)).await.unwrap();
+    let addr: SocketAddr = format!("[::]:{}", port).parse().unwrap();
+
+    let socket = TcpSocket::new_v6().unwrap();
+    socket.set_reuseaddr(true).unwrap();
+    socket.bind(addr).unwrap();
+
+    let listener = socket.listen(1024).unwrap();
 
     println!("🚀 server running on port - {}!", port);
 
-    serve(listener, app_router).await.unwrap();
+    serve(listener, app_router)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
 }

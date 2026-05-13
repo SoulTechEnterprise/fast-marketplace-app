@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use std::env;
+
 use crate::domain::{
     entities::vehicle::Vehicle,
     services::{error::DomainError, vehicle::VehicleService},
@@ -23,12 +25,21 @@ struct VehicleResponse {
 
 pub struct VehicleServiceApi {
     client: Client,
+    base_url: String,
 }
 
 impl VehicleServiceApi {
     pub fn new() -> Self {
+        let args: Vec<String> = env::args().collect();
+        let base_url = if args.len() > 1 {
+            args[1].clone()
+        } else {
+            "https://fast-marketplace-backend.soultech.agency".to_string()
+        };
+
         Self {
             client: Client::new(),
+            base_url,
         }
     }
 }
@@ -36,10 +47,7 @@ impl VehicleServiceApi {
 #[async_trait]
 impl VehicleService for VehicleServiceApi {
     async fn get(&self, url: String, token: String) -> Result<Vehicle, DomainError> {
-        let base_url = option_env!("BASE_URL_BACKEND")
-            .unwrap_or("https://fast-marketplace-backend.soultech.agency");
-
-        let endpoint = format!("{}/vehicle", base_url);
+        let endpoint = format!("{}/vehicle", self.base_url);
 
         let payload = VehicleRequest { url };
 
