@@ -1,13 +1,10 @@
 name: Build and Release
-
 on:
   push:
     tags:
       - "v*"
-
 permissions:
   contents: write
-
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -15,15 +12,20 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          TAG=${GITHUB_REF_NAME#v}
+          sed -i "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
 
       - run: cargo build --release
 
       - if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: Rename-Item -Path target/release/app.exe -NewName app-windows.exe
 
       - if: matrix.os == 'ubuntu-latest'

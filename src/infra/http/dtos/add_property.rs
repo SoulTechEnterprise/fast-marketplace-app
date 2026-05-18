@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+use crate::domain::entities::property::Property;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddPropertyUseCaseRequest {
-    pub url: String,
-    pub token: String,
+    pub property: Property,
     pub client_id: String,
 }
 

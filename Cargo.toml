@@ -1,11 +1,9 @@
 [package]
 name = "app"
-version = "0.1.0"
+version = "1.0.11"
 edition = "2024"
 
 [dependencies]
-# self_update = { version = "0.40", features = ["rustls"] }
-
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1.89"
 reqwest = { version = "0.13.2", features = ["json", "blocking"] }
@@ -24,3 +22,4 @@ dirs = "5"
 axum = "0.7"
 
 tower-http = { version = "0.5", features = ["cors"] }
+self_update = { version = "0.42", features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }

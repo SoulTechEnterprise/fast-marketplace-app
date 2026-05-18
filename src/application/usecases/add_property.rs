@@ -3,55 +3,45 @@ use std::sync::Arc;
 use crate::{
     application::error::UseCasesError,
     domain::{
-        repositories::image::ImageRepository,
-        services::{
-            property::PropertyService, webscraping::marketplace::WebscrapingMarketplaceService,
-        },
+        entities::property::Property, repositories::image::ImageRepository,
+        services::webscraping::marketplace::WebscrapingMarketplaceService,
     },
 };
 
 pub struct AddPropertyUseCase<
     _ImageRepository: ImageRepository,
     _WebscrapingMarketplaceService: WebscrapingMarketplaceService,
-    _PropertyService: PropertyService,
 > {
     image_repository: Arc<_ImageRepository>,
     webscraping_marketplace_service: Arc<_WebscrapingMarketplaceService>,
-    property_service: Arc<_PropertyService>,
 }
 
 impl<
     _ImageRepository: ImageRepository,
     _WebscrapingMarketplaceService: WebscrapingMarketplaceService,
-    _PropertyService: PropertyService,
-> AddPropertyUseCase<_ImageRepository, _WebscrapingMarketplaceService, _PropertyService>
+> AddPropertyUseCase<_ImageRepository, _WebscrapingMarketplaceService>
 {
     pub fn new(
         image_repository: Arc<_ImageRepository>,
         webscraping_marketplace_service: Arc<_WebscrapingMarketplaceService>,
-        property_service: Arc<_PropertyService>,
     ) -> Self {
         Self {
             image_repository,
             webscraping_marketplace_service,
-            property_service,
         }
     }
 
     pub async fn handle(
         &self,
-        url: String,
-        token: String,
         client_id: String,
+        mut property: Property,
     ) -> Result<(), UseCasesError> {
-        let mut response = self.property_service.get(url, token).await?;
+        let images = self.image_repository.add(property.image().clone()).await;
 
-        let images = self.image_repository.add(response.image().clone()).await;
-
-        response.set_image(images);
+        property.set_image(images);
 
         self.webscraping_marketplace_service
-            .add_property(response, client_id)
+            .add_property(property, client_id)
             .await?;
 
         Ok(())
@@ -60,12 +50,12 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::application::tests::{
-        repositories::image::InMemoryImageRepository,
-        services::{
-            property::InMemoryPropertyService,
-            webscraping::marketplace::InMemoryWebscrapingMarketplaceService,
+    use crate::{
+        application::tests::{
+            repositories::image::InMemoryImageRepository,
+            services::webscraping::marketplace::InMemoryWebscrapingMarketplaceService,
         },
+        domain::entities::models::property::{category::Category, model::Model},
     };
 
     use super::*;
@@ -75,19 +65,40 @@ mod tests {
         let image_repository = Arc::new(InMemoryImageRepository::new());
         let webscraping_marketplace_service =
             Arc::new(InMemoryWebscrapingMarketplaceService::new());
-        let property_service = Arc::new(InMemoryPropertyService::new());
 
-        let usecase = AddPropertyUseCase::new(
-            image_repository,
-            webscraping_marketplace_service,
-            property_service,
-        );
+        let usecase = AddPropertyUseCase::new(image_repository, webscraping_marketplace_service);
 
-        let url = "https://example.com".to_string();
-        let token = "asdASD123".to_string();
         let client_id = "123".to_string();
 
-        let response = usecase.handle(url, token, client_id).await;
+        let image = vec!["http://example.com/image/1".to_string()];
+        let model = Model::Sale;
+        let category = Category::House;
+        let bedroom = 2;
+        let bathroom = 2;
+        let price = 1000000;
+        let address = "A street example".to_string();
+        let description = "An example description".to_string();
+        let meter = 250;
+        let tax = 100;
+        let condominium = 300;
+        let parking = 3;
+
+        let property = Property::new(
+            image,
+            model,
+            category,
+            bedroom,
+            bathroom,
+            price,
+            address,
+            description,
+            meter,
+            tax,
+            condominium,
+            parking,
+        );
+
+        let response = usecase.handle(client_id, property).await;
 
         assert!(response.is_ok());
     }

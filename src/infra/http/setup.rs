@@ -8,20 +8,14 @@ use crate::{
     },
     infra::{
         repositories::image::ImageRepositoryImpl,
-        services::{
-            property::PropertyServiceApi, vehicle::VehicleServiceApi,
-            webscraping::marketplace::FacebookMarketplaceService,
-        },
+        services::webscraping::marketplace::FacebookMarketplaceService,
     },
 };
 
 #[derive(Clone)]
 pub struct AppState {
-    pub property_usecase: Arc<
-        AddPropertyUseCase<ImageRepositoryImpl, FacebookMarketplaceService, PropertyServiceApi>,
-    >,
-    pub vehicle_usecase:
-        Arc<AddVehicleUseCase<ImageRepositoryImpl, FacebookMarketplaceService, VehicleServiceApi>>,
+    pub property_usecase: Arc<AddPropertyUseCase<ImageRepositoryImpl, FacebookMarketplaceService>>,
+    pub vehicle_usecase: Arc<AddVehicleUseCase<ImageRepositoryImpl, FacebookMarketplaceService>>,
     pub get_marketplace_usecase: Arc<GetMarketplaceUseCase<FacebookMarketplaceService>>,
     pub signin_marketplace_usecase: Arc<SignInMarketplaceUseCase<FacebookMarketplaceService>>,
     pub signout_marketplace_usecase: Arc<SignOutMarketplaceUseCase<FacebookMarketplaceService>>,

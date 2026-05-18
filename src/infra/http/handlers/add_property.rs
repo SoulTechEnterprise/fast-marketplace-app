@@ -2,13 +2,9 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State, http::StatusCode};
 
-use crate::{
-    application::error::UseCasesError,
-    domain::services::error::DomainError,
-    infra::http::{
-        dtos::add_property::{AddPropertyUseCaseRequest, AddPropertyUseCaseResponse},
-        setup::AppState,
-    },
+use crate::infra::http::{
+    dtos::add_property::{AddPropertyUseCaseRequest, AddPropertyUseCaseResponse},
+    setup::AppState,
 };
 
 pub async fn add_property(
@@ -16,19 +12,15 @@ pub async fn add_property(
     Json(payload): Json<AddPropertyUseCaseRequest>,
 ) -> Result<Json<AddPropertyUseCaseResponse>, StatusCode> {
     let AddPropertyUseCaseRequest {
-        url,
-        token,
         client_id,
+        property,
     } = payload;
 
     state
         .property_usecase
-        .handle(url, token, client_id)
+        .handle(client_id, property)
         .await
-        .map_err(|err| match err {
-            UseCasesError::Domain(DomainError::LimitReached) => StatusCode::TOO_MANY_REQUESTS,
-            _ => StatusCode::BAD_REQUEST,
-        })?;
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     Ok(Json(AddPropertyUseCaseResponse {}))
 }

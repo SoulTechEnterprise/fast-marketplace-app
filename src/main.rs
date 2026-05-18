@@ -10,11 +10,9 @@ use app::{
     infra::{
         http::{routes::routes, setup::AppState},
         repositories::image::ImageRepositoryImpl,
-        services::{
-            property::PropertyServiceApi, vehicle::VehicleServiceApi,
-            webscraping::marketplace::FacebookMarketplaceService,
-        },
+        services::webscraping::marketplace::FacebookMarketplaceService,
     },
+    updater,
 };
 use axum::serve;
 use tokio::net::TcpSocket;
@@ -26,21 +24,23 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() {
+    tokio::task::spawn_blocking(|| {
+        updater::check_and_update();
+    })
+    .await
+    .ok();
+
     let image_repository = Arc::new(ImageRepositoryImpl::new());
-    let property_service = Arc::new(PropertyServiceApi::new());
-    let vehicle_service = Arc::new(VehicleServiceApi::new());
     let webscraping_marketplace_service = Arc::new(FacebookMarketplaceService::new());
 
     let property_usecase = Arc::new(AddPropertyUseCase::new(
         image_repository.clone(),
         webscraping_marketplace_service.clone(),
-        property_service,
     ));
 
     let vehicle_usecase = Arc::new(AddVehicleUseCase::new(
         image_repository,
         webscraping_marketplace_service.clone(),
-        vehicle_service,
     ));
 
     let signin_marketplace_usecase = Arc::new(SignInMarketplaceUseCase::new(
