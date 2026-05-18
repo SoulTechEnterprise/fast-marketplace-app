@@ -8,13 +8,12 @@ pub fn check_and_update() {
 
     let current_version = cargo_crate_version!();
 
-    // Define o nome do binário correto por plataforma
     let bin_name = if cfg!(target_os = "windows") {
-        "app-windows.exe"
+        "automatize-marketplace-windows.exe"
     } else if cfg!(target_os = "macos") {
-        "app-macos"
+        "automatize-marketplace-macos"
     } else {
-        "app-linux"
+        "automatize-marketplace-linux"
     };
 
     let status = self_update::backends::github::Update::configure()

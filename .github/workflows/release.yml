@@ -16,28 +16,41 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Set version from tag
-        shell: bash
+      - name: Set version from tag (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           TAG=${GITHUB_REF_NAME#v}
           sed -i "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
+
+      - name: Set version from tag (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          TAG=${GITHUB_REF_NAME#v}
+          sed -i '' "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
+
+      - name: Set version from tag (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME -replace '^v', ''
+          (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$tag`"" | Set-Content Cargo.toml
 
       - run: cargo build --release
 
       - if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: Rename-Item -Path target/release/app.exe -NewName app-windows.exe
+        run: Rename-Item -Path target/release/app.exe -NewName automatize-marketplace-windows.exe
 
       - if: matrix.os == 'ubuntu-latest'
-        run: mv target/release/app target/release/app-linux
+        run: mv target/release/app target/release/automatize-marketplace-linux
 
       - if: matrix.os == 'macos-latest'
-        run: mv target/release/app target/release/app-macos
+        run: mv target/release/app target/release/automatize-marketplace-macos
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/app-windows.exe
-            target/release/app-linux
-            target/release/app-macos
+            target/release/automatize-marketplace-windows.exe
+            target/release/automatize-marketplace-linux
+            target/release/automatize-marketplace-macos
           fail_on_unmatched_files: false
