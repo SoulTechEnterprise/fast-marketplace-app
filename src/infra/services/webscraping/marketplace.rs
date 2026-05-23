@@ -163,19 +163,39 @@ impl FacebookMarketplaceService {
             BrowserConfig::builder()
                 .with_head()
                 .user_data_dir(profile_dir(client_id))
-                .arg("--start-maximized")
-                .arg("--disable-infobars")
-                .arg("--disable-notifications")
-                .arg("--disable-blink-features=AutomationControlled")
-                .arg("--no-sandbox")
-                .arg("--disable-dev-shm-usage")
-                .arg("--disable-web-security")
-                .arg("--disable-features=IsolateOrigins,site-per-process")
-                .arg("--allow-running-insecure-content")
-                .arg("--disable-site-isolation-trials")
-                .arg("--excludeSwitches=enable-automation")
-                .arg("--useAutomationExtension=false")
-                .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
+                .arg("start-maximized")
+                .arg("disable-infobars")
+                .arg("disable-notifications")
+                .arg("disable-blink-features=AutomationControlled")
+                .arg("no-sandbox")
+                .arg("disable-dev-shm-usage")
+                .arg("disable-web-security")
+                .arg("disable-features=IsolateOrigins,site-per-process")
+                .arg("allow-running-insecure-content")
+                .arg("disable-site-isolation-trials")
+                .arg("excludeSwitches=enable-automation")
+                .arg("useAutomationExtension=false")
+                .arg("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
+                .arg("no-restore-session-state")
+                .arg("restore-last-session=false")
+                .arg("disable-session-crashed-bubble")
+                .arg("disable-automation")          // remove a barra "being controlled"
+                .arg("password-store=basic")
+                .arg("use-mock-keychain")
+                .arg("lang=pt-BR")
+                .arg("disable-ipc-flooding-protection")
+                .arg("disable-renderer-backgrounding")
+                .arg("disable-backgrounding-occluded-windows")
+                .arg("disable-client-side-phishing-detection")
+                .arg("disable-crash-reporter")
+                .arg("disable-oopr-debug-crash-dump")
+                .arg("no-crash-upload")
+                .arg("hide-crash-restore-bubble")   // remove o "Restore pages?"
+                .arg("suppress-message-center-popups")
+                .arg("disable-popup-blocking")
+                .arg("no-first-run")
+                .arg("no-default-browser-check")
+                .arg("new-window")
                 .build()
                 .map_err(|_| DomainError::NotFound)?,
         )
@@ -216,10 +236,18 @@ impl FacebookMarketplaceService {
 
     pub async fn open(&self, url: &str, client_id: String) -> Result<(), DomainError> {
         let browser = Self::launch_browser(client_id.as_str()).await?;
-        let page = browser
-            .new_page(url)
-            .await
-            .map_err(|_| DomainError::NotFound)?;
+
+        let page = match browser.pages().await {
+            Ok(pages) if !pages.is_empty() => {
+                let page = pages.into_iter().next().unwrap();
+                page.goto(url).await.map_err(|_| DomainError::NotFound)?;
+                page
+            }
+            _ => browser
+                .new_page(url)
+                .await
+                .map_err(|_| DomainError::NotFound)?,
+        };
 
         *self.browser.lock().await = Some(browser);
         *self.page.lock().await = Some(page);
@@ -229,6 +257,12 @@ impl FacebookMarketplaceService {
 
     pub async fn close(&self) {
         if let Some(mut browser) = self.browser.lock().await.take() {
+            if let Ok(pages) = browser.pages().await {
+                for page in pages {
+                    let _ = page.close().await;
+                }
+            }
+            sleep(Duration::from_millis(300)).await;
             let _ = browser.close().await;
         }
         *self.page.lock().await = None;
@@ -279,23 +313,23 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
         page.evaluate(
             r#"
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-                configurable: true
-            });
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
 
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
 
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
 
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['pt-BR', 'pt', 'en-US', 'en'],
-            });
-        "#,
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['pt-BR', 'pt', 'en-US', 'en'],
+                });
+            "#,
         )
         .await
         .map_err(|e| {
@@ -307,6 +341,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
         let el = page.wait_for_element(SEL_PHOTO_INPUT).await?;
         let image_paths: Vec<String> = entity.image().iter().map(|s| s.to_string()).collect();
+
         page.execute(SetFileInputFilesParams {
             files: image_paths,
             node_id: Some(el.node_id),
@@ -361,19 +396,25 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         let max_attempts = 240;
         for _ in 0..max_attempts {
             sleep(Duration::from_secs(2)).await;
-
-            if let Ok(js_result) = page.evaluate("window.location.href").await {
-                if let Ok(current_url) = js_result.into_value::<String>() {
-                    if current_url.contains("marketplace/you/selling") {
-                        break;
+            match page.evaluate("window.location.href").await {
+                Err(_) => {
+                    break;
+                }
+                Ok(js_result) => {
+                    if let Ok(current_url) = js_result.into_value::<String>() {
+                        if current_url.contains("marketplace/you/selling")
+                            || current_url.contains("marketplace/you/vehicles")
+                        {
+                            break;
+                        }
                     }
                 }
             }
         }
 
         drop(guard);
-
-        let _ = self.close().await;
+        sleep(Duration::from_millis(500)).await;
+        self.close().await;
 
         Ok(())
     }
@@ -408,23 +449,23 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
         page.evaluate(
             r#"
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-                configurable: true
-            });
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined,
+                    configurable: true
+                });
 
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
 
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
 
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['pt-BR', 'pt', 'en-US', 'en'],
-            });
-        "#,
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['pt-BR', 'pt', 'en-US', 'en'],
+                });
+            "#,
         )
         .await
         .map_err(|e| {
@@ -533,19 +574,25 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         let max_attempts = 240;
         for _ in 0..max_attempts {
             sleep(Duration::from_secs(2)).await;
-
-            if let Ok(js_result) = page.evaluate("window.location.href").await {
-                if let Ok(current_url) = js_result.into_value::<String>() {
-                    if current_url.contains("marketplace/you/selling") {
-                        break;
+            match page.evaluate("window.location.href").await {
+                Err(_) => {
+                    break;
+                }
+                Ok(js_result) => {
+                    if let Ok(current_url) = js_result.into_value::<String>() {
+                        if current_url.contains("marketplace/you/selling")
+                            || current_url.contains("marketplace/you/vehicles")
+                        {
+                            break;
+                        }
                     }
                 }
             }
         }
 
         drop(guard);
-
-        let _ = self.close().await;
+        sleep(Duration::from_millis(500)).await;
+        self.close().await;
 
         Ok(())
     }

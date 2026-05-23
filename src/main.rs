@@ -12,9 +12,8 @@ use app::{
         repositories::image::ImageRepositoryImpl,
         services::webscraping::marketplace::FacebookMarketplaceService,
     },
-    updater,
 };
-use axum::serve;
+use axum::{http::HeaderValue, serve};
 use tokio::net::TcpSocket;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -24,11 +23,10 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() {
-    tokio::task::spawn_blocking(|| {
-        updater::check_and_update();
-    })
-    .await
-    .ok();
+    #[cfg(not(debug_assertions))]
+    if let Err(e) = check_and_update() {
+        eprintln!("Falha ao verificar atualização: {}", e);
+    }
 
     let image_repository = Arc::new(ImageRepositoryImpl::new());
     let webscraping_marketplace_service = Arc::new(FacebookMarketplaceService::new());
@@ -62,17 +60,28 @@ async fn main() {
         get_marketplace_usecase,
     });
 
+    let allowed_origins = [
+        "http://localhost:4000".parse::<HeaderValue>().unwrap(),
+        "https://soultech.agency".parse::<HeaderValue>().unwrap(),
+        "https://fast-marketplace-dev-frontend.soultech.agency"
+            .parse::<HeaderValue>()
+            .unwrap(),
+        "https://fast-marketplace-frontend.soultech.agency"
+            .parse::<HeaderValue>()
+            .unwrap(),
+    ];
+
     let cors = CorsLayer::new()
-        .allow_origin(Any)
+        .allow_origin(allowed_origins)
         .allow_methods(Any)
         .allow_headers(Any);
 
     let app_router = routes(state).layer(cors);
 
     let port = "15137";
-    let addr: SocketAddr = format!("[::]:{}", port).parse().unwrap();
+    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
 
-    let socket = TcpSocket::new_v6().unwrap();
+    let socket = TcpSocket::new_v4().unwrap();
     socket.set_reuseaddr(true).unwrap();
     socket.bind(addr).unwrap();
 
@@ -84,4 +93,35 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
+}
+
+pub fn check_and_update() -> Result<(), Box<dyn std::error::Error>> {
+    let bin_name = if cfg!(target_os = "windows") {
+        "automatize-marketplace-windows.exe"
+    } else if cfg!(target_os = "macos") {
+        "automatize-marketplace-macos"
+    } else {
+        "automatize-marketplace-linux"
+    };
+
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("SoulTechEnterprise")
+        .repo_name("fast-marketplace-app")
+        .bin_name(bin_name)
+        .current_version(env!("CARGO_PKG_VERSION"))
+        .show_download_progress(true)
+        .build()?
+        .update()?;
+
+    if status.updated() {
+        println!(
+            "Atualizado para a versão {}! Reiniciando...",
+            status.version()
+        );
+        std::process::exit(0);
+    } else {
+        println!("Já está na versão mais recente.");
+    }
+
+    Ok(())
 }

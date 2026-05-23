@@ -5,6 +5,9 @@ use uuid::Uuid;
 
 use async_trait::async_trait;
 
+use image::ImageFormat;
+use std::io::Cursor;
+
 use crate::domain::repositories::image::ImageRepository;
 
 pub struct ImageRepositoryImpl {
@@ -33,38 +36,46 @@ impl Default for ImageRepositoryImpl {
 #[async_trait]
 impl ImageRepository for ImageRepositoryImpl {
     async fn add(&self, urls: Vec<String>) -> Vec<String> {
-        let mut caminhos_locais = Vec::new();
+        const MAX_SIZE: usize = 4 * 1024 * 1024;
 
-        for url in urls {
-            let response = match self.client.get(&url).send().await {
-                Ok(res) => res,
-                Err(_) => continue,
-            };
+        let tasks: Vec<_> = urls
+            .into_iter()
+            .map(|url| {
+                let client = self.client.clone();
+                let storage_dir = self.storage_dir.clone();
 
-            let bytes = match response.bytes().await {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
+                tokio::spawn(async move {
+                    let response = client.get(&url).send().await.ok()?;
+                    let bytes = response.bytes().await.ok()?;
 
-            let ext = PathBuf::from(&url)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("jpg")
-                .to_string();
-
-            let filename = format!("{}.{}", Uuid::new_v4(), ext);
-            let local_path = self.storage_dir.join(&filename);
-
-            if tokio::fs::write(&local_path, &bytes).await.is_ok() {
-                if let Ok(canon) = local_path.canonicalize() {
-                    if let Some(path_str) = canon.to_str() {
-                        caminhos_locais.push(path_str.to_string());
+                    if bytes.len() > MAX_SIZE {
+                        return None;
                     }
-                }
-            }
-        }
 
-        caminhos_locais
+                    let img = image::load_from_memory(&bytes).ok()?;
+
+                    let jpg_bytes = tokio::task::spawn_blocking(move || {
+                        let mut buf = Cursor::new(Vec::new());
+                        img.write_to(&mut buf, ImageFormat::Jpeg).ok()?;
+                        Some(buf.into_inner())
+                    })
+                    .await
+                    .ok()??;
+
+                    let filename = format!("{}.jpg", Uuid::new_v4());
+                    let local_path = storage_dir.join(&filename);
+                    tokio::fs::write(&local_path, &jpg_bytes).await.ok()?;
+                    let canon = local_path.canonicalize().ok()?;
+                    canon.to_str().map(|s| s.to_string())
+                })
+            })
+            .collect();
+
+        futures::future::join_all(tasks)
+            .await
+            .into_iter()
+            .filter_map(|r| r.ok().flatten())
+            .collect()
     }
 
     async fn remove(&self) -> () {

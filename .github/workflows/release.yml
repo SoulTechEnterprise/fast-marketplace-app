@@ -21,12 +21,14 @@ jobs:
         run: |
           TAG=${GITHUB_REF_NAME#v}
           sed -i "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
+          echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Set version from tag (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           TAG=${GITHUB_REF_NAME#v}
           sed -i '' "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
+          echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Set version from tag (Windows)
         if: matrix.os == 'windows-latest'
@@ -37,20 +39,45 @@ jobs:
 
       - run: cargo build --release
 
-      - if: matrix.os == 'windows-latest'
+      - name: Rename binary (Windows)
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: Rename-Item -Path target/release/app.exe -NewName automatize-marketplace-windows.exe
 
-      - if: matrix.os == 'ubuntu-latest'
-        run: mv target/release/app target/release/automatize-marketplace-linux
+      - name: Create .deb package (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p deb/automatize-marketplace/usr/local/bin
+          cp target/release/app deb/automatize-marketplace/usr/local/bin/automatize-marketplace
+          mkdir -p deb/automatize-marketplace/DEBIAN
+          cat > deb/automatize-marketplace/DEBIAN/control << EOF
+          Package: automatize-marketplace
+          Version: ${{ env.TAG }}
+          Section: base
+          Priority: optional
+          Architecture: amd64
+          Maintainer: SoulTech <contato@soultech.agency>
+          Description: Automatize Marketplace
+          EOF
+          dpkg-deb --build deb/automatize-marketplace
+          mv deb/automatize-marketplace.deb automatize-marketplace-linux.deb
 
-      - if: matrix.os == 'macos-latest'
-        run: mv target/release/app target/release/automatize-marketplace-macos
+      - name: Create .dmg (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p dmg_contents
+          cp target/release/app dmg_contents/automatize-marketplace
+          hdiutil create -volname "Automatize Marketplace" \
+            -srcfolder dmg_contents \
+            -ov -format UDZO \
+            automatize-marketplace-macos.dmg
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/automatize-marketplace-windows.exe
-            target/release/automatize-marketplace-linux
-            target/release/automatize-marketplace-macos
+            automatize-marketplace-linux.deb
+            automatize-marketplace-macos.dmg
+            instalar-mac.sh
+            instalar-linux.sh
           fail_on_unmatched_files: false

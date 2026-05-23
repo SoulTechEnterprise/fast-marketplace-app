@@ -44,6 +44,8 @@ impl<
             .add_vehicle(vehicle, client_id)
             .await?;
 
+        self.image_repository.remove().await;
+
         Ok(())
     }
 }
