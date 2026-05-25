@@ -23,11 +23,6 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() {
-    #[cfg(not(debug_assertions))]
-    if let Err(e) = check_and_update() {
-        eprintln!("Falha ao verificar atualização: {}", e);
-    }
-
     let image_repository = Arc::new(ImageRepositoryImpl::new());
     let webscraping_marketplace_service = Arc::new(FacebookMarketplaceService::new());
 
@@ -79,49 +74,49 @@ async fn main() {
     let app_router = routes(state).layer(cors);
 
     let port = "15137";
-    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+    let addr: SocketAddr = match format!("127.0.0.1:{}", port).parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            eprintln!("Falha ao analisar endereço de rede: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    let socket = TcpSocket::new_v4().unwrap();
-    socket.set_reuseaddr(true).unwrap();
-    socket.bind(addr).unwrap();
+    let socket = match TcpSocket::new_v4() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Falha ao criar socket TCP: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    let listener = socket.listen(1024).unwrap();
+    if let Err(e) = socket.set_reuseaddr(true) {
+        eprintln!("Falha ao configurar reuseaddr: {}", e);
+        std::process::exit(1);
+    }
+
+    if let Err(e) = socket.bind(addr) {
+        eprintln!(
+            "Falha ao associar a porta {}: {}. Certifique-se de que outra instância do aplicativo não esteja rodando.",
+            port, e
+        );
+        std::process::exit(1);
+    }
+
+    let listener = match socket.listen(1024) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Falha ao iniciar escuta na porta {}: {}", port, e);
+            std::process::exit(1);
+        }
+    };
 
     println!("🚀 server running on port - {}!", port);
 
-    serve(listener, app_router)
+    if let Err(e) = serve(listener, app_router)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .unwrap();
-}
-
-pub fn check_and_update() -> Result<(), Box<dyn std::error::Error>> {
-    let bin_name = if cfg!(target_os = "windows") {
-        "automatize-marketplace-windows.exe"
-    } else if cfg!(target_os = "macos") {
-        "automatize-marketplace-macos"
-    } else {
-        "automatize-marketplace-linux"
-    };
-
-    let status = self_update::backends::github::Update::configure()
-        .repo_owner("SoulTechEnterprise")
-        .repo_name("fast-marketplace-app")
-        .bin_name(bin_name)
-        .current_version(env!("CARGO_PKG_VERSION"))
-        .show_download_progress(true)
-        .build()?
-        .update()?;
-
-    if status.updated() {
-        println!(
-            "Atualizado para a versão {}! Reiniciando...",
-            status.version()
-        );
-        std::process::exit(0);
-    } else {
-        println!("Já está na versão mais recente.");
+    {
+        eprintln!("Erro na execução do servidor HTTP: {}", e);
     }
-
-    Ok(())
 }

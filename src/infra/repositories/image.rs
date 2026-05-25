@@ -1,6 +1,7 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, sync::Arc};
 
 use reqwest::Client;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use async_trait::async_trait;
@@ -18,7 +19,18 @@ pub struct ImageRepositoryImpl {
 impl ImageRepositoryImpl {
     pub fn new() -> Self {
         let storage_dir = env::temp_dir().join("webscraping_images");
-        fs::create_dir_all(&storage_dir).expect("Failed to create temp image directory");
+        let storage_dir = match fs::create_dir_all(&storage_dir) {
+            Ok(_) => storage_dir,
+            Err(e) => {
+                eprintln!(
+                    "Aviso: Falha ao criar diretório temporário de imagens: {}. Usando fallback local.",
+                    e
+                );
+                let local_dir = env::current_dir().unwrap_or_default().join("temp_images");
+                let _ = fs::create_dir_all(&local_dir);
+                local_dir
+            }
+        };
 
         Self {
             client: Client::new(),
@@ -37,14 +49,17 @@ impl Default for ImageRepositoryImpl {
 impl ImageRepository for ImageRepositoryImpl {
     async fn add(&self, urls: Vec<String>) -> Vec<String> {
         const MAX_SIZE: usize = 4 * 1024 * 1024;
+        let semaphore = Arc::new(Semaphore::new(3)); // Limita a concorrência a 3 downloads/processamentos simultâneos
 
         let tasks: Vec<_> = urls
             .into_iter()
             .map(|url| {
                 let client = self.client.clone();
                 let storage_dir = self.storage_dir.clone();
+                let sem = semaphore.clone();
 
                 tokio::spawn(async move {
+                    let _permit = sem.acquire().await.ok()?;
                     let response = client.get(&url).send().await.ok()?;
                     let bytes = response.bytes().await.ok()?;
 

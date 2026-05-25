@@ -6,7 +6,6 @@ use chromiumoxide::{
 };
 use futures::StreamExt;
 use std::path::PathBuf;
-use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 
 use crate::domain::entities::models::property::category::Category as PropertyCategory;
@@ -145,17 +144,37 @@ impl PageExt for Page {
     }
 }
 
-pub struct FacebookMarketplaceService {
-    browser: Mutex<Option<Browser>>,
-    page: Mutex<Option<Page>>,
+struct BrowserGuard {
+    browser: Option<Browser>,
 }
+
+impl BrowserGuard {
+    fn new(browser: Browser) -> Self {
+        Self { browser: Some(browser) }
+    }
+
+    async fn close(mut self) {
+        if let Some(mut browser) = self.browser.take() {
+            let _ = browser.kill().await;
+        }
+    }
+}
+
+impl Drop for BrowserGuard {
+    fn drop(&mut self) {
+        if let Some(mut browser) = self.browser.take() {
+            tokio::task::spawn(async move {
+                let _ = browser.kill().await;
+            });
+        }
+    }
+}
+
+pub struct FacebookMarketplaceService {}
 
 impl FacebookMarketplaceService {
     pub fn new() -> Self {
-        Self {
-            browser: Mutex::new(None),
-            page: Mutex::new(None),
-        }
+        Self {}
     }
 
     async fn launch_browser(client_id: &str) -> Result<Browser, DomainError> {
@@ -164,6 +183,15 @@ impl FacebookMarketplaceService {
                 .with_head()
                 .user_data_dir(profile_dir(client_id))
                 .arg("start-maximized")
+                .arg("window-size=1920,1080")
+                .viewport(chromiumoxide::handler::viewport::Viewport {
+                    width: 1920,
+                    height: 1080,
+                    device_scale_factor: Some(1.0),
+                    emulating_mobile: false,
+                    is_landscape: true,
+                    has_touch: false,
+                })
                 .arg("disable-infobars")
                 .arg("disable-notifications")
                 .arg("disable-blink-features=AutomationControlled")
@@ -179,6 +207,7 @@ impl FacebookMarketplaceService {
                 .arg("no-restore-session-state")
                 .arg("restore-last-session=false")
                 .arg("disable-session-crashed-bubble")
+                .arg("disable-background-mode")
                 .arg("disable-automation")          // remove a barra "being controlled"
                 .arg("password-store=basic")
                 .arg("use-mock-keychain")
@@ -197,10 +226,13 @@ impl FacebookMarketplaceService {
                 .arg("no-default-browser-check")
                 .arg("new-window")
                 .build()
-                .map_err(|_| DomainError::NotFound)?,
+                .map_err(|e| DomainError::AutomationError(format!("Falha ao construir configuração do browser: {}", e)))?,
         )
         .await
-        .map_err(|_| DomainError::NotFound)?;
+        .map_err(|e| {
+            eprintln!("Erro ao iniciar Google Chrome: {:?}", e);
+            DomainError::AutomationError("Google Chrome não foi encontrado no sistema ou falhou ao iniciar. Certifique-se de que o Google Chrome original está instalado no computador.".to_string())
+        })?;
 
         tokio::task::spawn(async move {
             while let Some(h) = handler.next().await {
@@ -218,10 +250,13 @@ impl FacebookMarketplaceService {
             BrowserConfig::builder()
                 .user_data_dir(profile_dir(client_id))
                 .build()
-                .map_err(|_| DomainError::NotFound)?,
+                .map_err(|e| DomainError::AutomationError(format!("Falha ao construir configuração headless do browser: {}", e)))?,
         )
         .await
-        .map_err(|_| DomainError::NotFound)?;
+        .map_err(|e| {
+            eprintln!("Erro ao iniciar Google Chrome Headless: {:?}", e);
+            DomainError::AutomationError("Google Chrome não foi encontrado no sistema ou falhou ao iniciar em modo oculto.".to_string())
+        })?;
 
         tokio::task::spawn(async move {
             while let Some(h) = handler.next().await {
@@ -234,44 +269,32 @@ impl FacebookMarketplaceService {
         Ok(browser)
     }
 
-    pub async fn open(&self, url: &str, client_id: String) -> Result<(), DomainError> {
-        let browser = Self::launch_browser(client_id.as_str()).await?;
-
-        let page = match browser.pages().await {
-            Ok(pages) if !pages.is_empty() => {
-                let page = pages.into_iter().next().unwrap();
-                page.goto(url).await.map_err(|_| DomainError::NotFound)?;
-                page
-            }
-            _ => browser
-                .new_page(url)
-                .await
-                .map_err(|_| DomainError::NotFound)?,
-        };
-
-        *self.browser.lock().await = Some(browser);
-        *self.page.lock().await = Some(page);
-
-        Ok(())
-    }
-
-    pub async fn close(&self) {
-        if let Some(mut browser) = self.browser.lock().await.take() {
+    async fn get_or_create_page(browser: &Browser, url: &str) -> Result<Page, DomainError> {
+        let mut page = None;
+        for _ in 0..15 {
             if let Ok(pages) = browser.pages().await {
-                for page in pages {
-                    let _ = page.close().await;
+                if !pages.is_empty() {
+                    page = Some(pages.into_iter().next().unwrap());
+                    break;
                 }
             }
-            sleep(Duration::from_millis(300)).await;
-            let _ = browser.close().await;
+            sleep(Duration::from_millis(100)).await;
         }
-        *self.page.lock().await = None;
-    }
 
-    async fn get_page<'a>(
-        guard: &'a tokio::sync::MutexGuard<'a, Option<Page>>,
-    ) -> Result<&'a Page, DomainError> {
-        guard.as_ref().ok_or(DomainError::NotFound)
+        let page = match page {
+            Some(p) => {
+                p.goto(url).await.map_err(|e| DomainError::AutomationError(format!("Falha ao navegar para a página: {}", e)))?;
+                p
+            }
+            None => {
+                browser
+                    .new_page(url)
+                    .await
+                    .map_err(|e| DomainError::AutomationError(format!("Falha ao criar nova página: {}", e)))?
+            }
+        };
+
+        Ok(page)
     }
 }
 
@@ -304,12 +327,11 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         const XPATH_CONDOMINIUM_INPUT: &str =
             "//span[contains(., 'Condomínio')]/following::input[1]";
 
-        let url = "https://www.facebook.com/marketplace/create/rental".to_string();
+        let url = "https://www.facebook.com/marketplace/create/rental?locale=pt_BR".to_string();
 
-        self.open(&url, client_id).await?;
-
-        let guard = self.page.lock().await;
-        let page = Self::get_page(&guard).await?;
+        let browser = Self::launch_browser(client_id.as_str()).await?;
+        let guard = BrowserGuard::new(browser);
+        let page = Self::get_or_create_page(guard.browser.as_ref().unwrap(), &url).await?;
 
         page.evaluate(
             r#"
@@ -412,9 +434,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             }
         }
 
-        drop(guard);
-        sleep(Duration::from_millis(500)).await;
-        self.close().await;
+        guard.close().await;
 
         Ok(())
     }
@@ -440,12 +460,11 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             "//span[contains(., 'Descrição')]/following::textarea[1]";
         const SEL_PHOTO_INPUT: &str = "input[type='file'][accept*='image']";
 
-        let url = "https://www.facebook.com/marketplace/create/vehicle".to_string();
+        let url = "https://www.facebook.com/marketplace/create/vehicle?locale=pt_BR".to_string();
 
-        self.open(&url, client_id).await?;
-
-        let guard = self.page.lock().await;
-        let page = Self::get_page(&guard).await?;
+        let browser = Self::launch_browser(client_id.as_str()).await?;
+        let guard = BrowserGuard::new(browser);
+        let page = Self::get_or_create_page(guard.browser.as_ref().unwrap(), &url).await?;
 
         page.evaluate(
             r#"
@@ -590,19 +609,15 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             }
         }
 
-        drop(guard);
-        sleep(Duration::from_millis(500)).await;
-        self.close().await;
+        guard.close().await;
 
         Ok(())
     }
 
     async fn signin(&self, client_id: String) -> Result<(), DomainError> {
-        let mut browser = Self::launch_browser(client_id.as_str()).await?;
-        let page = browser
-            .new_page("https://www.facebook.com/login")
-            .await
-            .map_err(|_| DomainError::NotFound)?;
+        let browser = Self::launch_browser(client_id.as_str()).await?;
+        let guard = BrowserGuard::new(browser);
+        let page = Self::get_or_create_page(guard.browser.as_ref().unwrap(), "https://www.facebook.com/login?locale=pt_BR").await?;
 
         for _ in 0..240 {
             sleep(Duration::from_secs(2)).await;
@@ -623,7 +638,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
                         }
 
                         sleep(Duration::from_secs(8)).await;
-                        let _ = browser.close().await;
+                        guard.close().await;
                         sleep(Duration::from_secs(2)).await;
                         return Ok(());
                     }
@@ -631,21 +646,17 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             }
         }
 
-        let _ = browser.close().await;
         Err(DomainError::NotFound)
     }
 
     async fn signout(&self, client_id: String) -> Result<(), DomainError> {
-        let mut browser = Self::launch_browser_headless(client_id.as_str()).await?;
-        let page = browser
-            .new_page("https://www.facebook.com")
-            .await
-            .map_err(|_| DomainError::NotFound)?;
+        let browser = Self::launch_browser_headless(client_id.as_str()).await?;
+        let guard = BrowserGuard::new(browser);
+        let page = Self::get_or_create_page(guard.browser.as_ref().unwrap(), "https://www.facebook.com/?locale=pt_BR").await?;
 
         sleep(Duration::from_secs(6)).await;
 
         if page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_err() {
-            let _ = browser.close().await;
             return Err(DomainError::NotFound);
         }
 
@@ -691,42 +702,39 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
                         || current_url.contains("accounts/login")
                     {
                         sleep(Duration::from_secs(3)).await;
-                        let _ = browser.close().await;
+                        guard.close().await;
                         return Ok(());
                     }
 
                     // Tela de seleção de conta — força navegação para login limpo
                     if current_url.contains("facebook.com") && !current_url.contains("login") {
-                        page.goto("https://www.facebook.com/login?next&prompt=select_account&login_attempt=1&lwv=100")
+                        page.goto("https://www.facebook.com/login?next&prompt=select_account&login_attempt=1&lwv=100&locale=pt_BR")
                             .await
                             .ok();
                         sleep(Duration::from_secs(2)).await;
-                        let _ = browser.close().await;
+                        guard.close().await;
                         return Ok(());
                     }
                 }
             }
         }
 
-        let _ = browser.close().await;
         Err(DomainError::AutomationError(
             "Timeout: logout não foi confirmado".to_string(),
         ))
     }
 
     async fn get_account(&self, client_id: String) -> Result<bool, DomainError> {
-        let mut browser = Self::launch_browser_headless(client_id.as_str()).await?;
+        let browser = Self::launch_browser_headless(client_id.as_str()).await?;
+        let guard = BrowserGuard::new(browser);
 
-        let page = browser
-            .new_page("https://www.facebook.com")
-            .await
-            .map_err(|_| DomainError::NotFound)?;
+        let page = Self::get_or_create_page(guard.browser.as_ref().unwrap(), "https://www.facebook.com/?locale=pt_BR").await?;
 
         sleep(Duration::from_secs(6)).await;
 
         let is_logged_in = page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_ok();
 
-        let _ = browser.close().await;
+        guard.close().await;
         Ok(is_logged_in)
     }
 }

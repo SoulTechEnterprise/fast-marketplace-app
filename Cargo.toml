@@ -22,6 +22,12 @@ dirs = "5"
 axum = "0.7"
 
 tower-http = { version = "0.5", features = ["cors"] }
-self_update = { version = "0.41", features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate"] }
 
 image = "0.25"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
