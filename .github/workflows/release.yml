@@ -37,6 +37,7 @@ jobs:
         run: |
           $tag = $env:GITHUB_REF_NAME -replace '^v', ''
           (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$tag`"" | Set-Content Cargo.toml
+          echo "TAG=$tag" >> $env:GITHUB_ENV
 
       - run: cargo build --release
 
@@ -63,6 +64,10 @@ jobs:
           dpkg-deb --build deb/automatize-marketplace
           mv deb/automatize-marketplace.deb automatize-marketplace-linux.deb
 
+      - name: Copy macOS raw binary
+        if: matrix.os == 'macos-latest'
+        run: cp target/release/app automatize-marketplace-macos
+
       - name: Create .dmg (macOS)
         if: matrix.os == 'macos-latest'
         run: |
@@ -73,12 +78,41 @@ jobs:
             -ov -format UDZO \
             automatize-marketplace-macos.dmg
 
-      - uses: softprops/action-gh-release@v2
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: artifacts-${{ matrix.os }}
+          path: |
             target/release/automatize-marketplace-windows.exe
             automatize-marketplace-linux.deb
+            automatize-marketplace-macos
             automatize-marketplace-macos.dmg
-            instalar-mac.sh
-            instalar-linux.sh
-          fail_on_unmatched_files: false
+          if-no-files-found: ignore
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Verify downloaded artifacts
+        run: ls -la artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/automatize-marketplace-windows.exe
+            artifacts/automatize-marketplace-linux.deb
+            artifacts/automatize-marketplace-macos
+            artifacts/automatize-marketplace-macos.dmg
+            install-mac.sh
+            install-linux.sh
