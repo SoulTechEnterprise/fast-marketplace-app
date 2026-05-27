@@ -416,6 +416,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             .await?;
 
         let max_attempts = 240;
+        let mut success = false;
         for _ in 0..max_attempts {
             sleep(Duration::from_secs(2)).await;
             match page.evaluate("window.location.href").await {
@@ -427,6 +428,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
                         if current_url.contains("marketplace/you/selling")
                             || current_url.contains("marketplace/you/vehicles")
                         {
+                            success = true;
                             break;
                         }
                     }
@@ -435,6 +437,12 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         }
 
         guard.close().await;
+
+        if !success {
+            return Err(DomainError::AutomationError(
+                "A publicação falhou, o tempo esgotou ou a janela foi fechada prematuramente.".to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -591,6 +599,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         }
 
         let max_attempts = 240;
+        let mut success = false;
         for _ in 0..max_attempts {
             sleep(Duration::from_secs(2)).await;
             match page.evaluate("window.location.href").await {
@@ -602,6 +611,7 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
                         if current_url.contains("marketplace/you/selling")
                             || current_url.contains("marketplace/you/vehicles")
                         {
+                            success = true;
                             break;
                         }
                     }
@@ -610,6 +620,12 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         }
 
         guard.close().await;
+
+        if !success {
+            return Err(DomainError::AutomationError(
+                "A publicação falhou, o tempo esgotou ou a janela foi fechada prematuramente.".to_string(),
+            ));
+        }
 
         Ok(())
     }
