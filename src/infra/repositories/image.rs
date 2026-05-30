@@ -49,7 +49,7 @@ impl Default for ImageRepositoryImpl {
 impl ImageRepository for ImageRepositoryImpl {
     async fn add(&self, urls: Vec<String>) -> Vec<String> {
         const MAX_SIZE: usize = 4 * 1024 * 1024;
-        let semaphore = Arc::new(Semaphore::new(3)); // Limita a concorrência a 3 downloads/processamentos simultâneos
+        let semaphore = Arc::new(Semaphore::new(5));
 
         let tasks: Vec<_> = urls
             .into_iter()

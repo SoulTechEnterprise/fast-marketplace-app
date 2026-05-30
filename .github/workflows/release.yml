@@ -44,7 +44,7 @@ jobs:
       - name: Rename binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: Rename-Item -Path target/release/app.exe -NewName automatize-marketplace-windows.exe
+        run: Move-Item -Path target/release/app.exe -Destination automatize-marketplace-windows.exe
 
       - name: Create .deb package (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -83,7 +83,7 @@ jobs:
         with:
           name: artifacts-${{ matrix.os }}
           path: |
-            target/release/automatize-marketplace-windows.exe
+            automatize-marketplace-windows.exe
             automatize-marketplace-linux.deb
             automatize-marketplace-macos
             automatize-marketplace-macos.dmg
