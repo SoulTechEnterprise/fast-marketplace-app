@@ -704,7 +704,8 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
         sleep(Duration::from_secs(6)).await;
 
         if page.find_element(SEL_FACEBOOK_LOGGED_IN).await.is_err() {
-            return Err(DomainError::NotFound);
+            guard.close().await;
+            return Ok(());
         }
 
         // Extrai o token h do form de logout e submete
