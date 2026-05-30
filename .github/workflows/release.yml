@@ -11,28 +11,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
 
-      - name: Set version from tag (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          TAG=${GITHUB_REF_NAME#v}
-          sed -i "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
-          echo "TAG=$TAG" >> $GITHUB_ENV
-
-      - name: Set version from tag (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          TAG=${GITHUB_REF_NAME#v}
-          sed -i '' "s/^version = \".*\"/version = \"$TAG\"/" Cargo.toml
-          echo "TAG=$TAG" >> $GITHUB_ENV
-
       - name: Set version from tag (Windows)
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -42,41 +27,8 @@ jobs:
       - run: cargo build --release
 
       - name: Rename binary (Windows)
-        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: Move-Item -Path target/release/app.exe -Destination automatize-marketplace-windows.exe
-
-      - name: Create .deb package (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          mkdir -p deb/automatize-marketplace/usr/local/bin
-          cp target/release/app deb/automatize-marketplace/usr/local/bin/automatize-marketplace
-          mkdir -p deb/automatize-marketplace/DEBIAN
-          cat > deb/automatize-marketplace/DEBIAN/control << EOF
-          Package: automatize-marketplace
-          Version: ${{ env.TAG }}
-          Section: base
-          Priority: optional
-          Architecture: amd64
-          Maintainer: SoulTech <contato@soultech.agency>
-          Description: Automatize Marketplace
-          EOF
-          dpkg-deb --build deb/automatize-marketplace
-          mv deb/automatize-marketplace.deb automatize-marketplace-linux.deb
-
-      - name: Copy macOS raw binary
-        if: matrix.os == 'macos-latest'
-        run: cp target/release/app automatize-marketplace-macos
-
-      - name: Create .dmg (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          mkdir -p dmg_contents
-          cp target/release/app dmg_contents/automatize-marketplace
-          hdiutil create -volname "Automatize Marketplace" \
-            -srcfolder dmg_contents \
-            -ov -format UDZO \
-            automatize-marketplace-macos.dmg
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -84,9 +36,6 @@ jobs:
           name: artifacts-${{ matrix.os }}
           path: |
             automatize-marketplace-windows.exe
-            automatize-marketplace-linux.deb
-            automatize-marketplace-macos
-            automatize-marketplace-macos.dmg
           if-no-files-found: ignore
 
   release:
@@ -111,8 +60,3 @@ jobs:
         with:
           files: |
             artifacts/automatize-marketplace-windows.exe
-            artifacts/automatize-marketplace-linux.deb
-            artifacts/automatize-marketplace-macos
-            artifacts/automatize-marketplace-macos.dmg
-            install-mac.sh
-            install-linux.sh
