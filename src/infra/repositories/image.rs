@@ -80,8 +80,7 @@ impl ImageRepository for ImageRepositoryImpl {
                     let filename = format!("{}.jpg", Uuid::new_v4());
                     let local_path = storage_dir.join(&filename);
                     tokio::fs::write(&local_path, &jpg_bytes).await.ok()?;
-                    let canon = local_path.canonicalize().ok()?;
-                    canon.to_str().map(|s| s.to_string())
+                    local_path.to_str().map(|s| s.to_string())
                 })
             })
             .collect();
