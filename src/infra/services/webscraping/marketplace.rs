@@ -29,6 +29,34 @@ const SEL_FACEBOOK_TRUST_DEVICE: &str = "div[data-testid='save-device-button'], 
                                           div[aria-label='Salvar dispositivo'], \
                                           .__7n5 button";
 
+fn cleanup_stale_processes_and_files(client_id: &str, dir: &std::path::Path) {
+    // 1. Kill any active processes holding the lock on our custom profile directory
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let command = format!(
+            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*marketplace*chrome-profiles*{}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
+            client_id
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-Command", &command])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .status();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let pattern = format!("marketplace/chrome-profiles/{}", client_id);
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", &pattern])
+            .status();
+    }
+
+    // 2. Delete leftover lock files
+    let _ = std::fs::remove_file(dir.join("SingletonLock"));
+    let _ = std::fs::remove_file(dir.join("SingletonSocket"));
+    let _ = std::fs::remove_file(dir.join("SingletonCookie"));
+}
+
 fn profile_dir(client_id: &str) -> PathBuf {
     #[cfg(target_os = "windows")]
     let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -40,6 +68,9 @@ fn profile_dir(client_id: &str) -> PathBuf {
         .join("chrome-profiles")
         .join(client_id);
     std::fs::create_dir_all(&dir).ok();
+
+    cleanup_stale_processes_and_files(client_id, &dir);
+
     dir
 }
 
