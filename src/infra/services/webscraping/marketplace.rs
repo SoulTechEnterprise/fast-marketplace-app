@@ -35,7 +35,7 @@ fn cleanup_stale_processes_and_files(client_id: &str, dir: &std::path::Path) {
     {
         use std::os::windows::process::CommandExt;
         let command = format!(
-            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*marketplace*chrome-profiles*{}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
+            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*chrome-profiles*{}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
             client_id
         );
         let _ = std::process::Command::new("powershell")
@@ -45,7 +45,7 @@ fn cleanup_stale_processes_and_files(client_id: &str, dir: &std::path::Path) {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let pattern = format!("marketplace/chrome-profiles/{}", client_id);
+        let pattern = format!("chrome-profiles/{}", client_id);
         let _ = std::process::Command::new("pkill")
             .args(["-f", &pattern])
             .status();
@@ -67,11 +67,117 @@ fn profile_dir(client_id: &str) -> PathBuf {
         .join("marketplace")
         .join("chrome-profiles")
         .join(client_id);
-    std::fs::create_dir_all(&dir).ok();
+        
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("Aviso: Falha ao criar pasta de perfil: {}. Usando diretório temporário.", e);
+        let temp_dir = std::env::temp_dir()
+            .join("marketplace-chrome-profiles")
+            .join(client_id);
+        let _ = std::fs::create_dir_all(&temp_dir);
+        cleanup_stale_processes_and_files(client_id, &temp_dir);
+        return temp_dir;
+    }
 
     cleanup_stale_processes_and_files(client_id, &dir);
 
     dir
+}
+
+fn get_option_xpath(text: &str) -> String {
+    let mut terms = vec![text.to_string()];
+    match text {
+        "Casa" => terms.push("House".to_string()),
+        "Apartamento" => {
+            terms.push("Apartment".to_string());
+            terms.push("Condo".to_string());
+        }
+        "Casa geminada" => terms.push("Townhouse".to_string()),
+        "À venda" => {
+            terms.push("sale".to_string());
+            terms.push("Venda".to_string());
+            terms.push("For sale".to_string());
+        }
+        "Aluguel" => {
+            terms.push("rent".to_string());
+            terms.push("Locação".to_string());
+            terms.push("Aluguel".to_string());
+            terms.push("For rent".to_string());
+        }
+        "Carro/picape" => {
+            terms.push("Car/Truck".to_string());
+            terms.push("Car or pickup".to_string());
+            terms.push("Carro".to_string());
+            terms.push("Picape".to_string());
+            terms.push("Carro/Caminhão".to_string());
+        }
+        "Motocicleta" => terms.push("Motorcycle".to_string()),
+        "Veículos para esportes" => {
+            terms.push("Powersport".to_string());
+            terms.push("Powersports".to_string());
+        }
+        "Trailer" => terms.push("Trailer".to_string()),
+        "Reboque" => {
+            terms.push("Utility trailer".to_string());
+            terms.push("reboque".to_string());
+        }
+        "Barco" => terms.push("Boat".to_string()),
+        "Comercial/industrial" => {
+            terms.push("Commercial".to_string());
+            terms.push("Industrial".to_string());
+        }
+        "Excelente" => {
+            terms.push("Like new".to_string());
+            terms.push("excelente".to_string());
+        }
+        "Muito bom" => {
+            terms.push("Very good".to_string());
+            terms.push("muito bom".to_string());
+        }
+        "Bom" => {
+            terms.push("Good".to_string());
+            terms.push("bom".to_string());
+        }
+        "Razoável" => {
+            terms.push("Fair".to_string());
+            terms.push("razoável".to_string());
+        }
+        "Ruim" => {
+            terms.push("Poor".to_string());
+            terms.push("ruim".to_string());
+        }
+        "Gasolina" => {
+            terms.push("Gas".to_string());
+            terms.push("Gasoline".to_string());
+        }
+        "Diesel" => terms.push("Diesel".to_string()),
+        "Híbrido" => terms.push("Hybrid".to_string()),
+        "Híbrido plug-in" => terms.push("Plug-in hybrid".to_string()),
+        "Elétrico" => terms.push("Electric".to_string()),
+        "Flex" => terms.push("Flex".to_string()),
+        "Cupê" => terms.push("Coupe".to_string()),
+        "Sedã" => terms.push("Sedan".to_string()),
+        "Hatch" => terms.push("Hatchback".to_string()),
+        "SUV" => terms.push("SUV".to_string()),
+        "Conversível" => terms.push("Convertible".to_string()),
+        "Station wagon" => {
+            terms.push("Wagon".to_string());
+            terms.push("Station".to_string());
+        }
+        "Minivan" => terms.push("Minivan".to_string()),
+        "Carro compacto" => {
+            terms.push("Compact".to_string());
+            terms.push("Compact car".to_string());
+        }
+        "Outro" => terms.push("Other".to_string()),
+        _ => {}
+    }
+
+    let conditions: Vec<String> = terms
+        .into_iter()
+        .map(|t| format!("contains(., '{}')", t))
+        .collect();
+
+    format!("//*[@role='option'][{}]", conditions.join(" or "))
 }
 
 #[async_trait]
@@ -112,23 +218,45 @@ impl PageExt for Page {
     }
 
     async fn click_option(&self, text: &str) -> Result<(), DomainError> {
-        let xpath = format!("//*[@role='option'][contains(., '{}')]", text);
+        let xpath = get_option_xpath(text);
         let el = self.wait_for_xpath(&xpath).await?;
-        el.click().await.map_err(|e| {
-            DomainError::AutomationError(format!("Falha ao clicar na opção '{}': {}", text, e))
-        })?;
+        if let Err(_) = el.click().await {
+            // Fallback to JS click
+            let click_js = format!(
+                r#"(function() {{
+                    var el = document.evaluate({:?}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    if (el) {{
+                        el.click();
+                        return true;
+                    }}
+                    return false;
+                }})()"#,
+                xpath
+            );
+            let _ = self.evaluate(click_js).await;
+        }
         sleep(Duration::from_millis(300)).await;
         Ok(())
     }
 
     async fn focus_and_type(&self, xpath: &str, value: &str) -> Result<(), DomainError> {
         let el = self.wait_for_xpath(xpath).await?;
-        el.click().await.map_err(|e| {
-            DomainError::AutomationError(format!(
-                "Falha ao clicar no input para focar ({}): {}",
-                xpath, e
-            ))
-        })?;
+        if let Err(_) = el.click().await {
+            // Fallback: Tenta focar e clicar via JS
+            let focus_js = format!(
+                r#"(function() {{
+                    var el = document.evaluate({:?}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    if (el) {{
+                        el.focus();
+                        el.click();
+                        return true;
+                    }}
+                    return false;
+                }})()"#,
+                xpath
+            );
+            let _ = self.evaluate(focus_js).await;
+        }
 
         let js = format!(
             r#"(function() {{
@@ -136,10 +264,17 @@ impl PageExt for Page {
                     XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
                 if (!el) return false;
                 el.focus();
-                document.execCommand('insertText', false, {:?});
+                // 1. Tenta usar insertText para simular digitação real
+                var success = document.execCommand('insertText', false, {:?});
+                if (!success || el.value !== {:?}) {{
+                    // 2. Fallback caso execCommand falhe ou não atualize o valor
+                    el.value = {:?};
+                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
                 return true;
             }})()"#,
-            xpath, value
+            xpath, value, value, value
         );
 
         let ok = self
@@ -147,7 +282,7 @@ impl PageExt for Page {
             .await
             .map_err(|e| {
                 DomainError::AutomationError(format!(
-                    "Falha ao injetar JS no input ({}): {}",
+                    "Falha ao executar script de digitação ({}): {}",
                     xpath, e
                 ))
             })?
@@ -166,9 +301,21 @@ impl PageExt for Page {
 
     async fn select_dropdown(&self, xpath: &str, option_text: &str) -> Result<(), DomainError> {
         let el = self.wait_for_xpath(xpath).await?;
-        el.click().await.map_err(|e| {
-            DomainError::AutomationError(format!("Falha ao clicar no dropdown ({}): {}", xpath, e))
-        })?;
+        if let Err(_) = el.click().await {
+            // Fallback to JS click
+            let click_js = format!(
+                r#"(function() {{
+                    var el = document.evaluate({:?}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                    if (el) {{
+                        el.click();
+                        return true;
+                    }}
+                    return false;
+                }})()"#,
+                xpath
+            );
+            let _ = self.evaluate(click_js).await;
+        }
         sleep(Duration::from_secs(1)).await;
         self.click_option(option_text).await?;
         Ok(())
@@ -339,24 +486,27 @@ impl Default for FacebookMarketplaceService {
 impl WebscrapingMarketplaceService for FacebookMarketplaceService {
     async fn add_property(&self, entity: Property, client_id: String) -> Result<(), DomainError> {
         const XPATH_MODEL_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'venda ou locação')]";
+            "//label[@role='combobox'][contains(., 'venda ou locação') or contains(., 'Property for rent') or contains(., 'Property for sale') or contains(., 'Alquiler')]";
         const XPATH_CATEGORY_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Tipo de imóvel')]";
+            "//label[@role='combobox'][contains(., 'Tipo de imóvel') or contains(., 'Property type') or contains(., 'Tipo de propiedad')]";
         const XPATH_PARKING_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Vagas de estacionamento')]";
+            "//label[@role='combobox'][contains(., 'Vagas de estacionamento') or contains(., 'Parking spaces') or contains(., 'Plazas de aparcamiento') or contains(., 'Estacionamiento')]";
         const XPATH_BEDROOM_INPUT: &str =
-            "//span[contains(., 'Número de quartos')]/following::input[1]";
+            "//span[contains(., 'Número de quartos') or contains(., 'Number of bedrooms') or contains(., 'Bedrooms') or contains(., 'Habitaciones')]/following::input[1]";
         const XPATH_BATHROOM_INPUT: &str =
-            "//span[contains(., 'Número de banheiros')]/following::input[1]";
-        const XPATH_PRICE_INPUT: &str = "//span[contains(., 'Preço')]/following::input[1]";
-        const XPATH_ADDRESS_INPUT: &str = "//input[@role='combobox'][@aria-autocomplete='list'][not(contains(@aria-label, 'Pesquisar'))]";
+            "//span[contains(., 'Número de banheiros') or contains(., 'Number of bathrooms') or contains(., 'Bathrooms') or contains(., 'Baños')]/following::input[1]";
+        const XPATH_PRICE_INPUT: &str =
+            "//span[contains(., 'Preço') or contains(., 'Price') or contains(., 'Precio')]/following::input[1]";
+        const XPATH_ADDRESS_INPUT: &str =
+            "//input[@role='combobox'][@aria-autocomplete='list'][not(contains(@aria-label, 'Pesquisar'))][not(contains(@aria-label, 'Search'))]";
         const XPATH_DESCRIPTION_TEXTAREA: &str =
-            "//span[contains(., 'Descrição do imóvel')]/following::textarea[1]";
+            "//span[contains(., 'Descrição do imóvel') or contains(., 'Property description') or contains(., 'Description') or contains(., 'Descripción')]/following::textarea[1]";
         const XPATH_METER_INPUT: &str =
-            "//span[contains(., 'Metros quadrados')]/following::input[1]";
-        const XPATH_TAX_INPUT: &str = "//span[contains(., 'Imposto')]/following::input[1]";
+            "//span[contains(., 'Metros quadrados') or contains(., 'Square feet') or contains(., 'Square meters') or contains(., 'Metros cuadrados') or contains(., 'Área útil')]/following::input[1]";
+        const XPATH_TAX_INPUT: &str =
+            "//span[contains(., 'Imposto') or contains(., 'Tax') or contains(., 'Impuesto')]/following::input[1]";
         const XPATH_CONDOMINIUM_INPUT: &str =
-            "//span[contains(., 'Condomínio')]/following::input[1]";
+            "//span[contains(., 'Condomínio') or contains(., 'Condo') or contains(., 'HOA fee') or contains(., 'Condominio')]/following::input[1]";
 
         let url = "https://www.facebook.com/marketplace/create/rental?locale=pt_BR".to_string();
 
@@ -480,23 +630,29 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
     async fn add_vehicle(&self, entity: Vehicle, client_id: String) -> Result<(), DomainError> {
         const XPATH_TYPE_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Tipo de veículo')]";
-        const XPATH_YEAR_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Ano')]";
-        const XPATH_MAKE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Fabricante')]";
-        const XPATH_MAKE_INPUT: &str = "//span[contains(., 'Fabricante')]/following::input[1]";
-        const XPATH_MODEL_INPUT: &str = "//span[contains(., 'Modelo')]/following::input[1]";
+            "//label[@role='combobox'][contains(., 'Tipo de veículo') or contains(., 'Vehicle type') or contains(., 'Tipo de vehículo')]";
+        const XPATH_YEAR_DROPDOWN: &str =
+            "//label[@role='combobox'][contains(., 'Ano') or contains(., 'Year') or contains(., 'Año')]";
+        const XPATH_MAKE_DROPDOWN: &str =
+            "//label[@role='combobox'][contains(., 'Fabricante') or contains(., 'Make') or contains(., 'Marca')]";
+        const XPATH_MAKE_INPUT: &str =
+            "//span[contains(., 'Fabricante') or contains(., 'Make') or contains(., 'Marca')]/following::input[1]";
+        const XPATH_MODEL_INPUT: &str =
+            "//span[contains(., 'Modelo') or contains(., 'Model') or contains(., 'Modelo')]/following::input[1]";
         const XPATH_MILEAGE_INPUT: &str =
-            "//span[contains(., 'Quilometragem')]/following::input[1]";
-        const XPATH_PRICE_INPUT: &str = "//span[contains(., 'Preço')]/following::input[1]";
+            "//span[contains(., 'Quilometragem') or contains(., 'Mileage') or contains(., 'Kilometraje')]/following::input[1]";
+        const XPATH_PRICE_INPUT: &str =
+            "//span[contains(., 'Preço') or contains(., 'Price') or contains(., 'Precio')]/following::input[1]";
         const XPATH_BODYSTYLE_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Estilo da carroceria')]";
+            "//label[@role='combobox'][contains(., 'Estilo da carroceria') or contains(., 'Body style') or contains(., 'Carrocería')]";
         const XPATH_CONDITION_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Condição do veículo')]";
+            "//label[@role='combobox'][contains(., 'Condição do veículo') or contains(., 'Condition') or contains(., 'Condición')]";
         const XPATH_FUEL_DROPDOWN: &str =
-            "//label[@role='combobox'][contains(., 'Tipo de combustível')]";
-        const XPATH_LOCATION_INPUT: &str = "//input[@role='combobox'][@aria-label='Localização']";
+            "//label[@role='combobox'][contains(., 'Tipo de combustível') or contains(., 'Fuel type') or contains(., 'Combustible')]";
+        const XPATH_LOCATION_INPUT: &str =
+            "//input[@role='combobox'][@aria-label='Localização' or @aria-label='Location' or @aria-label='Ubicación']";
         const XPATH_DESCRIPTION_TEXTAREA: &str =
-            "//span[contains(., 'Descrição')]/following::textarea[1]";
+            "//span[contains(., 'Descrição') or contains(., 'Description') or contains(., 'Descripción')]/following::textarea[1]";
         const SEL_PHOTO_INPUT: &str = "input[type='file'][accept*='image']";
 
         let url = "https://www.facebook.com/marketplace/create/vehicle?locale=pt_BR".to_string();
