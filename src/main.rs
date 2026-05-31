@@ -13,12 +13,12 @@ use app::{
         services::webscraping::marketplace::FacebookMarketplaceService,
     },
 };
-use axum::{http::HeaderValue, serve};
+use axum::{http::{HeaderValue, Method}, serve};
 use tokio::net::TcpSocket;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c().await.unwrap();
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[tokio::main]
@@ -68,8 +68,8 @@ async fn main() {
 
     let cors = CorsLayer::new()
         .allow_origin(allowed_origins)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION]);
 
     let app_router = routes(state).layer(cors);
 
