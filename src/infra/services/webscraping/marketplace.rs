@@ -44,29 +44,11 @@ const SEL_FACEBOOK_TRUST_DEVICE: &str = "div[data-testid='save-device-button'], 
                                           div[aria-label='Salvar dispositivo'], \
                                           .__7n5 button";
 
-fn cleanup_stale_processes_and_files(client_id: &str, dir: &std::path::Path) {
-    // 1. Kill any active processes holding the lock on our custom profile directory
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        let command = format!(
-            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object {{ $_.CommandLine -like '*chrome-profiles*{}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
-            client_id
-        );
-        let _ = std::process::Command::new("powershell")
-            .args(["-Command", &command])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
-            .status();
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let pattern = format!("chrome-profiles/{}", client_id);
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", &pattern])
-            .status();
-    }
-
-    // 2. Delete leftover lock files
+fn cleanup_stale_lock_files(dir: &std::path::Path) {
+    // Only delete leftover lock files that prevent Chrome from starting.
+    // We no longer forcefully kill Chrome processes here because the
+    // graceful browser.close() + wait() in BrowserGuard handles that.
+    // Forcefully killing Chrome was causing cookie/session data loss.
     let _ = std::fs::remove_file(dir.join("SingletonLock"));
     let _ = std::fs::remove_file(dir.join("SingletonSocket"));
     let _ = std::fs::remove_file(dir.join("SingletonCookie"));
@@ -92,11 +74,11 @@ fn profile_dir(client_id: &str) -> PathBuf {
             .join("marketplace-chrome-profiles")
             .join(client_id);
         let _ = std::fs::create_dir_all(&temp_dir);
-        cleanup_stale_processes_and_files(client_id, &temp_dir);
+        cleanup_stale_lock_files(&temp_dir);
         return temp_dir;
     }
 
-    cleanup_stale_processes_and_files(client_id, &dir);
+    cleanup_stale_lock_files(&dir);
 
     dir
 }
@@ -351,9 +333,16 @@ impl BrowserGuard {
         }
     }
 
+    /// Gracefully close the browser, giving Chrome time to flush cookies and
+    /// session data to disk. This is critical for Facebook login persistence.
     async fn close(mut self) {
         if let Some(mut browser) = self.browser.take() {
-            let _ = browser.kill().await;
+            // 1. Send the close command (graceful shutdown)
+            let _ = browser.close().await;
+            // 2. Wait for the process to fully exit so cookies are flushed
+            let _ = browser.wait().await;
+            // 3. Extra safety delay to ensure disk writes complete
+            sleep(Duration::from_secs(1)).await;
         }
     }
 }
@@ -361,8 +350,12 @@ impl BrowserGuard {
 impl Drop for BrowserGuard {
     fn drop(&mut self) {
         if let Some(mut browser) = self.browser.take() {
+            // Fallback: if close() wasn't called explicitly, try graceful
+            // close in a spawned task. This is less reliable than calling
+            // close() explicitly but better than kill().
             tokio::task::spawn(async move {
-                let _ = browser.kill().await;
+                let _ = browser.close().await;
+                let _ = browser.wait().await;
             });
         }
     }
