@@ -8,6 +8,8 @@ use futures::StreamExt;
 use std::path::PathBuf;
 use tokio::time::{Duration, sleep};
 
+use crate::infra::logger;
+
 use crate::domain::entities::models::property::category::Category as PropertyCategory;
 use crate::domain::entities::models::property::model::Model as PropertyModel;
 
@@ -66,10 +68,10 @@ fn profile_dir(client_id: &str) -> PathBuf {
         .join(client_id);
 
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!(
-            "Aviso: Falha ao criar pasta de perfil: {}. Usando diretório temporário.",
+        logger::warn(&format!(
+            "Falha ao criar pasta de perfil: {}. Usando diretório temporário.",
             e
-        );
+        ));
         let temp_dir = std::env::temp_dir()
             .join("marketplace-chrome-profiles")
             .join(client_id);
@@ -192,12 +194,26 @@ pub trait PageExt {
 #[async_trait]
 impl PageExt for Page {
     async fn wait_for_element(&self, selector: &str) -> Result<Element, DomainError> {
-        for _ in 1..=20 {
+        for _ in 1..=40 {
             if let Ok(el) = self.find_element(selector).await {
                 return Ok(el);
             }
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(750)).await;
         }
+
+        // Captura a URL atual para diagnóstico
+        let current_url = self
+            .evaluate("window.location.href")
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<String>().ok())
+            .unwrap_or_else(|| "(não foi possível obter a URL)".to_string());
+
+        logger::error(&format!(
+            "Elemento não encontrado após 30s: {} | Página atual: {}",
+            selector, current_url
+        ));
+
         Err(DomainError::AutomationError(format!(
             "Elemento não carregou na tela: {}",
             selector
@@ -205,12 +221,26 @@ impl PageExt for Page {
     }
 
     async fn wait_for_xpath(&self, xpath: &str) -> Result<Element, DomainError> {
-        for _ in 1..=20 {
+        for _ in 1..=40 {
             if let Ok(el) = self.find_xpath(xpath).await {
                 return Ok(el);
             }
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(750)).await;
         }
+
+        // Captura a URL atual para diagnóstico
+        let current_url = self
+            .evaluate("window.location.href")
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<String>().ok())
+            .unwrap_or_else(|| "(não foi possível obter a URL)".to_string());
+
+        logger::error(&format!(
+            "XPath não encontrado após 30s: {} | Página atual: {}",
+            xpath, current_url
+        ));
+
         Err(DomainError::AutomationError(format!(
             "XPath não carregou na tela: {}",
             xpath
@@ -417,7 +447,7 @@ impl FacebookMarketplaceService {
         )
         .await
         .map_err(|e| {
-            eprintln!("Erro ao iniciar Google Chrome: {:?}", e);
+            logger::error(&format!("Erro ao iniciar Google Chrome: {:?}", e));
             DomainError::AutomationError("Google Chrome não foi encontrado no sistema ou falhou ao iniciar. Certifique-se de que o Google Chrome original está instalado no computador.".to_string())
         })?;
 
@@ -446,7 +476,7 @@ impl FacebookMarketplaceService {
         )
         .await
         .map_err(|e| {
-            eprintln!("Erro ao iniciar Google Chrome Headless: {:?}", e);
+            logger::error(&format!("Erro ao iniciar Google Chrome Headless: {:?}", e));
             DomainError::AutomationError(
                 "Google Chrome não foi encontrado no sistema ou falhou ao iniciar em modo oculto."
                     .to_string(),
@@ -502,23 +532,35 @@ impl Default for FacebookMarketplaceService {
 impl WebscrapingMarketplaceService for FacebookMarketplaceService {
     async fn add_property(&self, entity: Property, client_id: String) -> Result<(), DomainError> {
         sanitize_client_id(&client_id)?;
-        const XPATH_MODEL_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'venda ou locação') or contains(., 'Property for rent') or contains(., 'Property for sale') or contains(., 'Alquiler')]";
-        const XPATH_CATEGORY_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de imóvel') or contains(., 'Property type') or contains(., 'Tipo de propiedad')]";
-        const XPATH_PARKING_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Vagas de estacionamento') or contains(., 'Parking spaces') or contains(., 'Plazas de aparcamiento') or contains(., 'Estacionamiento')]";
-        const XPATH_BEDROOM_INPUT: &str = "//span[contains(., 'Número de quartos') or contains(., 'Number of bedrooms') or contains(., 'Bedrooms') or contains(., 'Habitaciones')]/following::input[1]";
-        const XPATH_BATHROOM_INPUT: &str = "//span[contains(., 'Número de banheiros') or contains(., 'Number of bathrooms') or contains(., 'Bathrooms') or contains(., 'Baños')]/following::input[1]";
+        // ── Seletores XPath (Português / Inglês / Espanhol) ───────────────
+        const XPATH_MODEL_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'venda ou locação') or contains(., 'Home for sale or rent') or contains(., 'Home for sale') or contains(., 'Property for rent') or contains(., 'Property for sale') or contains(., 'Listing type') or contains(., 'Alquiler')]";
+        const XPATH_CATEGORY_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de imóvel') or contains(., 'Home type') or contains(., 'Property type') or contains(., 'Tipo de propiedad')]";
+        const XPATH_PARKING_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Vagas de estacionamento') or contains(., 'Parking spaces') or contains(., 'Parking') or contains(., 'Plazas de aparcamiento') or contains(., 'Estacionamiento')]";
+        const XPATH_BEDROOM_INPUT: &str = "//span[contains(., 'Número de quartos') or contains(., 'Number of bedrooms') or contains(., 'Bedrooms') or contains(., 'Habitaciones') or contains(., 'Quartos')]/following::input[1]";
+        const XPATH_BATHROOM_INPUT: &str = "//span[contains(., 'Número de banheiros') or contains(., 'Number of bathrooms') or contains(., 'Bathrooms') or contains(., 'Baños') or contains(., 'Banheiros')]/following::input[1]";
         const XPATH_PRICE_INPUT: &str = "//span[contains(., 'Preço') or contains(., 'Price') or contains(., 'Precio')]/following::input[1]";
         const XPATH_ADDRESS_INPUT: &str = "//input[@role='combobox'][@aria-autocomplete='list'][not(contains(@aria-label, 'Pesquisar'))][not(contains(@aria-label, 'Search'))]";
-        const XPATH_DESCRIPTION_TEXTAREA: &str = "//span[contains(., 'Descrição do imóvel') or contains(., 'Property description') or contains(., 'Description') or contains(., 'Descripción')]/following::textarea[1]";
-        const XPATH_METER_INPUT: &str = "//span[contains(., 'Metros quadrados') or contains(., 'Square feet') or contains(., 'Square meters') or contains(., 'Metros cuadrados') or contains(., 'Área útil')]/following::input[1]";
+        const XPATH_DESCRIPTION_TEXTAREA: &str = "//span[contains(., 'Descrição do imóvel') or contains(., 'Descrição') or contains(., 'Property description') or contains(., 'Description') or contains(., 'Descripción')]/following::textarea[1]";
+        const XPATH_METER_INPUT: &str = "//span[contains(., 'Metros quadrados') or contains(., 'Área útil') or contains(., 'Square feet') or contains(., 'Square meters') or contains(., 'Metros cuadrados')]/following::input[1]";
         const XPATH_TAX_INPUT: &str = "//span[contains(., 'Imposto') or contains(., 'Tax') or contains(., 'Impuesto')]/following::input[1]";
-        const XPATH_CONDOMINIUM_INPUT: &str = "//span[contains(., 'Condomínio') or contains(., 'Condo') or contains(., 'HOA fee') or contains(., 'Condominio')]/following::input[1]";
+        const XPATH_CONDOMINIUM_INPUT: &str = "//span[contains(., 'Condomínio') or contains(., 'Condo') or contains(., 'HOA fee') or contains(., 'HOA') or contains(., 'Condominio')]/following::input[1]";
 
-        let url = "https://www.facebook.com/marketplace/create/rental?locale=pt_BR".to_string();
+        let url = "https://www.facebook.com/marketplace/create/rental";
 
         let browser = Self::launch_browser(client_id.as_str()).await?;
         let guard = BrowserGuard::new(browser);
-        let page = Self::get_or_create_page(guard.browser.as_ref().ok_or(DomainError::AutomationError("Browser not available".to_string()))?, &url).await?;
+        let page = Self::get_or_create_page(guard.browser.as_ref().ok_or(DomainError::AutomationError("Browser not available".to_string()))?, url).await?;
+
+        // Forçar idioma português no Facebook via cookie de locale.
+        // O parâmetro ?locale=pt_BR na URL não funciona de forma confiável
+        // porque o Facebook prioriza a configuração de idioma da conta.
+        // O cookie força o servidor a responder em português.
+        page.evaluate(
+            r#"document.cookie = "locale=pt_BR; domain=.facebook.com; path=/; max-age=31536000; SameSite=None; Secure";"#
+        ).await.ok();
+        page.evaluate("window.location.reload()").await.ok();
+        logger::info("Forçando idioma português no Facebook...");
+        sleep(Duration::from_secs(4)).await;
 
         page.evaluate(
             r#"
@@ -548,6 +590,26 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             ))
         })?;
 
+        // Verificar se o usuário está logado antes de continuar
+        sleep(Duration::from_secs(3)).await;
+        let current_url = page
+            .evaluate("window.location.href")
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<String>().ok())
+            .unwrap_or_default();
+
+        if current_url.contains("login") || current_url.contains("checkpoint") {
+            logger::error(&format!(
+                "Usuário não está logado no Facebook. URL atual: {}",
+                current_url
+            ));
+            guard.close().await;
+            return Err(DomainError::AutomationError(
+                "Você precisa estar logado no Facebook antes de publicar. Use a opção 'Entrar' primeiro.".to_string(),
+            ));
+        }
+
         let el = page.wait_for_element(SEL_PHOTO_INPUT).await?;
         let image_paths: Vec<String> = entity.image().iter().map(|s| s.to_string()).collect();
 
@@ -562,7 +624,9 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             DomainError::AutomationError(format!("Falha ao enviar as fotos para o Chromium: {}", e))
         })?;
 
-        sleep(Duration::from_secs(2)).await;
+        // Aguardar o formulário carregar completamente após upload das imagens
+        logger::info("Fotos enviadas, aguardando formulário carregar...");
+        sleep(Duration::from_secs(5)).await;
 
         page.select_dropdown(
             XPATH_MODEL_DROPDOWN,
@@ -637,25 +701,34 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
 
     async fn add_vehicle(&self, entity: Vehicle, client_id: String) -> Result<(), DomainError> {
         sanitize_client_id(&client_id)?;
-        const XPATH_TYPE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de veículo') or contains(., 'Vehicle type') or contains(., 'Tipo de vehículo')]";
+        // ── Seletores XPath (Português / Inglês / Espanhol) ───────────────
+        const XPATH_TYPE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de veículo') or contains(., 'Vehicle type') or contains(., 'Type') or contains(., 'Tipo de vehículo')]";
         const XPATH_YEAR_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Ano') or contains(., 'Year') or contains(., 'Año')]";
         const XPATH_MAKE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Fabricante') or contains(., 'Make') or contains(., 'Marca')]";
         const XPATH_MAKE_INPUT: &str = "//span[contains(., 'Fabricante') or contains(., 'Make') or contains(., 'Marca')]/following::input[1]";
-        const XPATH_MODEL_INPUT: &str = "//span[contains(., 'Modelo') or contains(., 'Model') or contains(., 'Modelo')]/following::input[1]";
-        const XPATH_MILEAGE_INPUT: &str = "//span[contains(., 'Quilometragem') or contains(., 'Mileage') or contains(., 'Kilometraje')]/following::input[1]";
+        const XPATH_MODEL_INPUT: &str = "//span[contains(., 'Modelo') or contains(., 'Model')]/following::input[1]";
+        const XPATH_MILEAGE_INPUT: &str = "//span[contains(., 'Quilometragem') or contains(., 'Mileage') or contains(., 'Kilometraje') or contains(., 'Odometer')]/following::input[1]";
         const XPATH_PRICE_INPUT: &str = "//span[contains(., 'Preço') or contains(., 'Price') or contains(., 'Precio')]/following::input[1]";
-        const XPATH_BODYSTYLE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Estilo da carroceria') or contains(., 'Body style') or contains(., 'Carrocería')]";
-        const XPATH_CONDITION_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Condição do veículo') or contains(., 'Condition') or contains(., 'Condición')]";
-        const XPATH_FUEL_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de combustível') or contains(., 'Fuel type') or contains(., 'Combustible')]";
+        const XPATH_BODYSTYLE_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Estilo da carroceria') or contains(., 'Body style') or contains(., 'Body Style') or contains(., 'Carrocería')]";
+        const XPATH_CONDITION_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Condição do veículo') or contains(., 'Condição') or contains(., 'Condition') or contains(., 'Condición')]";
+        const XPATH_FUEL_DROPDOWN: &str = "//label[@role='combobox'][contains(., 'Tipo de combustível') or contains(., 'Fuel type') or contains(., 'Fuel') or contains(., 'Combustible')]";
         const XPATH_LOCATION_INPUT: &str = "//input[@role='combobox'][@aria-label='Localização' or @aria-label='Location' or @aria-label='Ubicación']";
         const XPATH_DESCRIPTION_TEXTAREA: &str = "//span[contains(., 'Descrição') or contains(., 'Description') or contains(., 'Descripción')]/following::textarea[1]";
         const SEL_PHOTO_INPUT: &str = "input[type='file'][accept*='image']";
 
-        let url = "https://www.facebook.com/marketplace/create/vehicle?locale=pt_BR".to_string();
+        let url = "https://www.facebook.com/marketplace/create/vehicle";
 
         let browser = Self::launch_browser(client_id.as_str()).await?;
         let guard = BrowserGuard::new(browser);
-        let page = Self::get_or_create_page(guard.browser.as_ref().ok_or(DomainError::AutomationError("Browser not available".to_string()))?, &url).await?;
+        let page = Self::get_or_create_page(guard.browser.as_ref().ok_or(DomainError::AutomationError("Browser not available".to_string()))?, url).await?;
+
+        // Forçar idioma português no Facebook via cookie de locale.
+        page.evaluate(
+            r#"document.cookie = "locale=pt_BR; domain=.facebook.com; path=/; max-age=31536000; SameSite=None; Secure";"#
+        ).await.ok();
+        page.evaluate("window.location.reload()").await.ok();
+        logger::info("Forçando idioma português no Facebook...");
+        sleep(Duration::from_secs(4)).await;
 
         page.evaluate(
             r#"
@@ -685,6 +758,26 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             ))
         })?;
 
+        // Verificar se o usuário está logado antes de continuar
+        sleep(Duration::from_secs(3)).await;
+        let current_url = page
+            .evaluate("window.location.href")
+            .await
+            .ok()
+            .and_then(|v| v.into_value::<String>().ok())
+            .unwrap_or_default();
+
+        if current_url.contains("login") || current_url.contains("checkpoint") {
+            logger::error(&format!(
+                "Usuário não está logado no Facebook. URL atual: {}",
+                current_url
+            ));
+            guard.close().await;
+            return Err(DomainError::AutomationError(
+                "Você precisa estar logado no Facebook antes de publicar. Use a opção 'Entrar' primeiro.".to_string(),
+            ));
+        }
+
         let el = page.wait_for_element(SEL_PHOTO_INPUT).await?;
         let image_paths: Vec<String> = entity.image().iter().map(|s| s.to_string()).collect();
 
@@ -699,7 +792,9 @@ impl WebscrapingMarketplaceService for FacebookMarketplaceService {
             DomainError::AutomationError(format!("Falha ao enviar as fotos para o Chromium: {}", e))
         })?;
 
-        sleep(Duration::from_secs(2)).await;
+        // Aguardar o formulário carregar completamente após upload das imagens
+        logger::info("Fotos enviadas, aguardando formulário carregar...");
+        sleep(Duration::from_secs(5)).await;
 
         page.select_dropdown(
             XPATH_TYPE_DROPDOWN,
